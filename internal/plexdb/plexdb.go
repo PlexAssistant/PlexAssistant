@@ -98,3 +98,24 @@ func (d *DB) PartsByItem(itemID int64) ([]Part, error) {
 	}
 	return out, rows.Err()
 }
+
+// ItemsBySection returns the metadata item ids of a library section.
+func (d *DB) ItemsBySection(sectionID int64) ([]int64, error) {
+	rows, err := d.conn.Query(
+		`SELECT DISTINCT metadata_item_id FROM media_items WHERE library_section_id=?`,
+		sectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

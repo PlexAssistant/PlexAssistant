@@ -18,10 +18,11 @@ func newFixtureDB(t *testing.T, schemaVersion string) *DB {
 	stmts := []string{
 		`CREATE TABLE schema_migrations (version varchar(255) NOT NULL)`,
 		`INSERT INTO schema_migrations VALUES ('` + schemaVersion + `')`,
-		`CREATE TABLE media_items (id INTEGER PRIMARY KEY, metadata_item_id INTEGER)`,
+		`CREATE TABLE media_items (id INTEGER PRIMARY KEY, metadata_item_id INTEGER,
+		   library_section_id INTEGER)`,
 		`CREATE TABLE media_parts (id INTEGER PRIMARY KEY, media_item_id INTEGER,
 		   file TEXT, size INTEGER DEFAULT 0, duration INTEGER)`,
-		`INSERT INTO media_items VALUES (1, 42)`,
+		`INSERT INTO media_items VALUES (1, 42, 1)`,
 		`INSERT INTO media_parts VALUES (10, 1, '/data/a.strm', 35, NULL)`,
 		`INSERT INTO media_parts VALUES (11, 1, '/data/b.strm', 48, 1200)`,
 	}
@@ -67,5 +68,18 @@ func TestPartsByItem(t *testing.T) {
 	none, err := db.PartsByItem(999)
 	if err != nil || len(none) != 0 {
 		t.Fatalf("unknown item: parts=%v err=%v", none, err)
+	}
+}
+
+func TestItemsBySection(t *testing.T) {
+	db := newFixtureDB(t, "500000000001.231")
+
+	ids, err := db.ItemsBySection(1)
+	if err != nil || len(ids) != 1 || ids[0] != 42 {
+		t.Fatalf("ids=%v err=%v", ids, err)
+	}
+	other, err := db.ItemsBySection(99)
+	if err != nil || len(other) != 0 {
+		t.Fatalf("other=%v err=%v", other, err)
 	}
 }
