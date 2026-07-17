@@ -28,6 +28,8 @@ func newScannerCmd() *cobra.Command {
 	cmd.Flags().String("library-db", plexdb.DefaultPath, "library database path")
 	cmd.Flags().String("ffprobe", envDefault("ASSISTANT_FFPROBE", "ffprobe"), "ffprobe path")
 	cmd.Flags().String("ua", linkres.DefaultUA, "user agent for cloud drives")
+	cmd.Flags().String("runtime-sock", "/run/assistant.sock",
+		"runtime daemon socket; unreachable = resolve directly")
 	cmd.FParseErrWhitelist = cobra.FParseErrWhitelist{UnknownFlags: true}
 	return cmd
 }
@@ -44,7 +46,8 @@ func runScanner(cmd *cobra.Command, _ []string) error {
 	dbPath, _ := cmd.Flags().GetString("library-db")
 	ffprobe, _ := cmd.Flags().GetString("ffprobe")
 	ua, _ := cmd.Flags().GetString("ua")
-	opts := scanner.Options{FfprobePath: ffprobe, UserAgent: ua}
+	sock, _ := cmd.Flags().GetString("runtime-sock")
+	opts := scanner.Options{FfprobePath: ffprobe, UserAgent: ua, RuntimeSock: sock}
 
 	db, err := plexdb.Open(dbPath)
 	if err != nil {
