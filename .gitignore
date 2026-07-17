@@ -30,3 +30,6 @@ docs/
 .idea/
 .vscode/
 *.swp
+
+# Real media data (never commit)
+/private/
