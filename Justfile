@@ -23,6 +23,9 @@ image:
 gen-media base="http://fakecloud:8399" out="testdata":
     ./scripts/gen-media.sh {{base}} {{out}}
 
+gen-bulk count="500" base="http://fakecloud:8399" out="testdata":
+    ./scripts/gen-bulk-strm.sh {{count}} {{base}} {{out}}
+
 rig-up:
     docker compose -f docker-compose.dev.yml up -d
 
