@@ -2,26 +2,100 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/PlexAssistant/PlexAssistant/internal/install"
 )
 
-// newInstallCmd symlinks the Plex Scanner/Transcoder to this binary,
-// records VERSION metadata, and sets install-time Plex preferences.
+// Version is overridden at build time via -ldflags.
+var Version = "dev"
+
 func newInstallCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install scanner/transcoder symlinks into Plex",
-		RunE: func(*cobra.Command, []string) error {
-			return fmt.Errorf("install: not implemented")
-		},
 	}
-	cmd.AddCommand(&cobra.Command{
+	cmd.Flags().String("plex-dir", "/usr/lib/plexmediaserver", "Plex binary directory")
+	cmd.AddCommand(
+		newInstallVerifyCmd(),
+		newInstallRevertCmd(),
+	)
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		inst, err := installer(cmd)
+		if err != nil {
+			return err
+		}
+		if err := inst.Do(); err != nil {
+			return err
+		}
+		fmt.Printf("installed %v into %s\n", install.Targets, inst.PlexDir)
+		return nil
+	}
+	return cmd
+}
+
+func newInstallVerifyCmd() *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "verify",
 		Short: "Verify installation integrity",
-		RunE: func(*cobra.Command, []string) error {
-			return fmt.Errorf("install verify: not implemented")
-		},
-	})
+	}
+	cmd.Flags().String("plex-dir", "/usr/lib/plexmediaserver", "Plex binary directory")
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		inst, err := installer(cmd)
+		if err != nil {
+			return err
+		}
+		failed := false
+		for _, r := range inst.Verify() {
+			status := "ok"
+			if !r.OK {
+				status = "FAIL: " + r.Problem
+				failed = true
+			}
+			fmt.Printf("%-20s %s\n", r.Target, status)
+		}
+		if failed {
+			return fmt.Errorf("verification failed")
+		}
+		return nil
+	}
 	return cmd
+}
+
+func newInstallRevertCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "revert",
+		Short: "Restore original Plex binaries",
+	}
+	cmd.Flags().String("plex-dir", "/usr/lib/plexmediaserver", "Plex binary directory")
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		inst, err := installer(cmd)
+		if err != nil {
+			return err
+		}
+		if err := inst.Revert(); err != nil {
+			return err
+		}
+		fmt.Println("originals restored")
+		return nil
+	}
+	return cmd
+}
+
+func installer(cmd *cobra.Command) (*install.Installer, error) {
+	dir, err := cmd.Flags().GetString("plex-dir")
+	if err != nil {
+		return nil, err
+	}
+	bin, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return &install.Installer{
+		PlexDir: dir,
+		BinPath: bin,
+		Version: Version,
+	}, nil
 }
