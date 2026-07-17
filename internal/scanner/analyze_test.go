@@ -64,6 +64,14 @@ func TestBuildSpec(t *testing.T) {
 	if spec.Streams[2].Language != "chi" {
 		t.Fatalf("subtitle lang: %+v", spec.Streams[2])
 	}
+	// und falls back to a language string, never NULL
+	if spec.Streams[1].Language != "en" {
+		t.Fatalf("audio lang fallback: %+v", spec.Streams[1])
+	}
+	// video stream bitrate falls back to the format bitrate
+	if spec.Streams[0].Bitrate != 1501731 {
+		t.Fatalf("video bitrate fallback: %+v", spec.Streams[0])
+	}
 }
 
 func TestBuildSpecFallbacks(t *testing.T) {
