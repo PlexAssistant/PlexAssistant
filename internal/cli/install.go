@@ -18,6 +18,7 @@ func newInstallCmd() *cobra.Command {
 		Short: "Install scanner/transcoder symlinks into Plex",
 	}
 	cmd.Flags().String("plex-dir", "/usr/lib/plexmediaserver", "Plex binary directory")
+	cmd.Flags().String("support-dir", install.DefaultSupportDir, "Plex data directory")
 	cmd.AddCommand(
 		newInstallVerifyCmd(),
 		newInstallRevertCmd(),
@@ -42,6 +43,7 @@ func newInstallVerifyCmd() *cobra.Command {
 		Short: "Verify installation integrity",
 	}
 	cmd.Flags().String("plex-dir", "/usr/lib/plexmediaserver", "Plex binary directory")
+	cmd.Flags().String("support-dir", install.DefaultSupportDir, "Plex data directory")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		inst, err := installer(cmd)
 		if err != nil {
@@ -70,6 +72,7 @@ func newInstallRevertCmd() *cobra.Command {
 		Short: "Restore original Plex binaries",
 	}
 	cmd.Flags().String("plex-dir", "/usr/lib/plexmediaserver", "Plex binary directory")
+	cmd.Flags().String("support-dir", install.DefaultSupportDir, "Plex data directory")
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		inst, err := installer(cmd)
 		if err != nil {
@@ -89,13 +92,18 @@ func installer(cmd *cobra.Command) (*install.Installer, error) {
 	if err != nil {
 		return nil, err
 	}
+	support, err := cmd.Flags().GetString("support-dir")
+	if err != nil {
+		return nil, err
+	}
 	bin, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
 	return &install.Installer{
-		PlexDir: dir,
-		BinPath: bin,
-		Version: Version,
+		PlexDir:    dir,
+		SupportDir: support,
+		BinPath:    bin,
+		Version:    Version,
 	}, nil
 }

@@ -32,9 +32,10 @@ type State struct {
 
 // Installer replaces target binaries inside one Plex directory.
 type Installer struct {
-	PlexDir string // directory containing the target binaries
-	BinPath string // absolute path to this binary
-	Version string
+	PlexDir    string // directory containing the target binaries
+	SupportDir string // Plex data directory (Preferences.xml)
+	BinPath    string // absolute path to this binary
+	Version    string
 }
 
 // Do installs all targets. It is idempotent: re-running refreshes the
@@ -75,7 +76,10 @@ func (i *Installer) Do() error {
 		Targets:     Targets,
 		InstalledAt: time.Now().UTC(),
 	}
-	return i.writeState(state)
+	if err := i.writeState(state); err != nil {
+		return err
+	}
+	return setPrefs(i.SupportDir)
 }
 
 // Result is one target's verification outcome.
