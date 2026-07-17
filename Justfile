@@ -38,6 +38,7 @@ deploy:
     docker compose -f docker-compose.dev.yml cp dist/assistant-linux-arm64 plex:/usr/local/bin/assistant
     docker compose -f docker-compose.dev.yml exec -T plex chmod +x /usr/local/bin/assistant
     docker compose -f docker-compose.dev.yml exec -T plex /usr/local/bin/assistant install
+    docker compose -f docker-compose.dev.yml exec -T plex bash -c 'mkdir -p /config/assistant; pgrep -f "[a]ssistant runtime" >/dev/null' || docker compose -f docker-compose.dev.yml exec -d plex /usr/local/bin/assistant runtime
 
 undeploy:
     docker compose -f docker-compose.dev.yml exec -T plex /usr/local/bin/assistant install revert

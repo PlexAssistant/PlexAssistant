@@ -8,12 +8,14 @@ import (
 
 	"github.com/PlexAssistant/PlexAssistant/internal/linkres"
 	"github.com/PlexAssistant/PlexAssistant/internal/plexdb"
+	"github.com/PlexAssistant/PlexAssistant/internal/runtime"
 )
 
 // Options configures one analysis run.
 type Options struct {
 	FfprobePath string
 	UserAgent   string
+	RuntimeSock string // daemon socket; empty or unreachable = resolve directly
 }
 
 // AnalyzeItem runs the pipeline for every strm part of one metadata
@@ -39,9 +41,9 @@ func AnalyzeItem(ctx context.Context, db *plexdb.DB, itemID int64, opts Options)
 			continue // local path inside a strm: not ours
 		}
 
-		link, err := linkres.Resolve(ctx, target.Value, opts.UserAgent)
-		if err != nil {
-			fmt.Printf("item %d part %d: resolve: %v\n", itemID, part.ID, err)
+		link := resolveLink(ctx, target.Value, opts)
+		if link == nil {
+			fmt.Printf("item %d part %d: resolve failed\n", itemID, part.ID)
 			continue
 		}
 		probe, err := Probe(ctx, opts.FfprobePath, link.URL, opts.UserAgent)
@@ -55,6 +57,23 @@ func AnalyzeItem(ctx context.Context, db *plexdb.DB, itemID int64, opts Options)
 		analyzed++
 	}
 	return analyzed, nil
+}
+
+// resolveLink asks the daemon first (its persistent cache saves
+// upstream resolutions), falling back to resolving directly. Analysis
+// never refreshes a dead link; that is reserved for playback.
+func resolveLink(ctx context.Context, target string, opts Options) *linkres.Link {
+	if opts.RuntimeSock != "" {
+		client := runtime.Client{SockPath: opts.RuntimeSock}
+		if res, err := client.Resolve(ctx, target); err == nil {
+			return &linkres.Link{URL: res.Direct, ExpiresAt: res.ExpiresAt}
+		}
+	}
+	link, err := linkres.Resolve(ctx, target, opts.UserAgent)
+	if err != nil {
+		return nil
+	}
+	return link
 }
 
 // BuildSpec maps a probe result onto the row shapes the official
