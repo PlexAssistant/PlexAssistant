@@ -1,0 +1,32 @@
+# Go
+/assistant
+/bin/
+/dist/
+
+# Nix / direnv
+result
+result-*
+.direnv/
+
+# Docs
+docs/
+*.md
+
+# Secrets & local config
+.env
+*.local.yaml
+
+# Test rig volumes & media
+/data/
+/config/
+/testdata/media/
+
+# Runtime artifacts
+*.db-shm
+*.db-wal
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
