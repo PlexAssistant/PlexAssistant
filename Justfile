@@ -24,7 +24,7 @@ gen-media base="http://fakecloud:8399" out="testdata":
     ./scripts/gen-media.sh {{base}} {{out}}
 
 rig-up:
-    docker compose up -d
+    docker compose -f docker-compose.dev.yml up -d
 
 rig-down:
-    docker compose down
+    docker compose -f docker-compose.dev.yml down
