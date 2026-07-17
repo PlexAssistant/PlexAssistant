@@ -2,18 +2,38 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
+
+	"github.com/PlexAssistant/PlexAssistant/internal/linkres"
+	"github.com/PlexAssistant/PlexAssistant/internal/runtime"
 )
 
-// newRuntimeCmd runs the resident daemon: direct-link cache, circuit
-// breaker and quotas, serving scanner/transcoder over UDS.
+// newRuntimeCmd runs the resident link-cache daemon. Links are stored
+// persistently and trusted until playback reports them dead.
 func newRuntimeCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "runtime",
 		Short: "Run the resident link-cache daemon",
-		RunE: func(*cobra.Command, []string) error {
-			return fmt.Errorf("runtime: not implemented")
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			sock, _ := cmd.Flags().GetString("sock")
+			cachePath, _ := cmd.Flags().GetString("cache")
+			ua, _ := cmd.Flags().GetString("ua")
+
+			cache, err := runtime.OpenCache(cachePath)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = cache.Close() }()
+
+			fmt.Printf("runtime: listening on %s, cache %s\n", sock, cachePath)
+			return runtime.NewDaemon(cache, ua).Serve(sock)
 		},
 	}
+	cmd.Flags().String("sock", "/run/assistant.sock", "unix socket path")
+	cmd.Flags().String("cache",
+		filepath.Join("/config/assistant", "cache.db"), "cache database path")
+	cmd.Flags().String("ua", linkres.DefaultUA, "user agent for cloud drives")
+	return cmd
 }
