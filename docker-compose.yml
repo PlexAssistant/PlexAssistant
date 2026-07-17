@@ -14,10 +14,11 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=Asia/Shanghai
+      - TZ=Asia/Taipei
       - VERSION=docker
     volumes:
       - ./data/config:/config
       - ./testdata/strm:/data/strm:ro
+      - ./scripts/spike:/spike:ro
     ports:
       - "127.0.0.1:32400:32400"
