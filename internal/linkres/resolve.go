@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DefaultUA identifies us to cloud drives; links can be bound to it, so
@@ -29,6 +31,7 @@ type Link struct {
 	ContentType    string
 	Size           int64 // total bytes if known
 	RangeSupported bool  // server answered 206 to our range probe
+	ExpiresAt      int64 // unix seconds sniffed from the URL, 0 = unknown
 }
 
 // Resolve follows the strm URL's redirect chain and returns the direct
@@ -78,12 +81,39 @@ func Resolve(ctx context.Context, rawURL, ua string) (*Link, error) {
 	link.URL = resp.Request.URL.String()
 	link.ContentType = resp.Header.Get("Content-Type")
 	link.RangeSupported = resp.StatusCode == http.StatusPartialContent
+	link.ExpiresAt = SniffExpiry(link.URL, time.Now())
 	if total := contentRangeTotal(resp.Header.Get("Content-Range")); total > 0 {
 		link.Size = total
 	} else {
 		link.Size, _ = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 	}
 	return link, nil
+}
+
+// SniffExpiry looks for a plausible unix-seconds timestamp in the URL
+// query (signed links commonly carry exp/expires/t=...). It is
+// informational only; returned 0 means unknown.
+func SniffExpiry(rawURL string, now time.Time) int64 {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return 0
+	}
+	var best int64
+	for _, values := range u.Query() {
+		for _, v := range values {
+			if len(v) != 10 {
+				continue // signatures are longer or hex
+			}
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n <= now.Unix() {
+				continue
+			}
+			if best == 0 || n > best {
+				best = n
+			}
+		}
+	}
+	return best
 }
 
 // contentRangeTotal parses "bytes 0-0/12345" into 12345.
