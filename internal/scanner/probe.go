@@ -64,17 +64,18 @@ type Format struct {
 
 // Stream is one ffprobe stream entry.
 type Stream struct {
-	Index      int    `json:"index"`
-	CodecName  string `json:"codec_name"`
-	CodecType  string `json:"codec_type"` // video | audio | subtitle
-	Width      int    `json:"width"`
-	Height     int    `json:"height"`
-	BitRate    string `json:"bit_rate"`
-	Duration   string `json:"duration"`
-	Channels   int    `json:"channels"`
-	SampleRate string `json:"sample_rate"`
-	FrameRate  string `json:"avg_frame_rate"`
-	Tags       struct {
+	Index              int    `json:"index"`
+	CodecName          string `json:"codec_name"`
+	CodecType          string `json:"codec_type"` // video | audio | subtitle
+	Width              int    `json:"width"`
+	Height             int    `json:"height"`
+	BitRate            string `json:"bit_rate"`
+	Duration           string `json:"duration"`
+	Channels           int    `json:"channels"`
+	SampleRate         string `json:"sample_rate"`
+	FrameRate          string `json:"avg_frame_rate"`
+	DisplayAspectRatio string `json:"display_aspect_ratio"` // e.g. "16:9"
+	Tags               struct {
 		Language string `json:"language"`
 	} `json:"tags"`
 }
