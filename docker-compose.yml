@@ -1,0 +1,23 @@
+services:
+  fakecloud:
+    image: golang:1.26-alpine
+    working_dir: /src
+    command: go run ./cmd/fakecloud -addr :8399 -root /media
+    volumes:
+      - .:/src
+      - ./testdata/media:/media:ro
+    ports:
+      - "127.0.0.1:8399:8399"
+
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - VERSION=docker
+    volumes:
+      - ./data/config:/config
+      - ./testdata/strm:/data/strm:ro
+    ports:
+      - "127.0.0.1:32400:32400"

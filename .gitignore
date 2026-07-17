@@ -16,10 +16,10 @@ docs/
 .env
 *.local.yaml
 
-# Test rig volumes & media
+# Test rig volumes & media (regenerable via `just gen-media`)
 /data/
 /config/
-/testdata/media/
+/testdata/
 
 # Runtime artifacts
 *.db-shm

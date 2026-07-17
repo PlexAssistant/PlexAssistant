@@ -19,3 +19,12 @@ fmt:
 
 image:
     docker build -t plexassistant:dev .
+
+gen-media base="http://fakecloud:8399" out="testdata":
+    ./scripts/gen-media.sh {{base}} {{out}}
+
+rig-up:
+    docker compose up -d
+
+rig-down:
+    docker compose down
