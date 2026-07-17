@@ -28,3 +28,13 @@ rig-up:
 
 rig-down:
     docker compose -f docker-compose.dev.yml down
+
+# cross-build for the rig container and install into Plex
+deploy:
+    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o dist/assistant-linux-arm64 ./cmd/assistant
+    docker compose -f docker-compose.dev.yml cp dist/assistant-linux-arm64 plex:/usr/local/bin/assistant
+    docker compose -f docker-compose.dev.yml exec -T plex chmod +x /usr/local/bin/assistant
+    docker compose -f docker-compose.dev.yml exec -T plex /usr/local/bin/assistant install
+
+undeploy:
+    docker compose -f docker-compose.dev.yml exec -T plex /usr/local/bin/assistant install revert
