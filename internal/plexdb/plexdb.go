@@ -67,17 +67,18 @@ func (d *DB) SchemaKnown() (bool, string, error) {
 
 // Part is one media part (typically one file) of a metadata item.
 type Part struct {
-	ID       int64
-	File     string
-	Size     int64
-	Duration int64 // ms, 0 = unknown
+	ID          int64
+	MediaItemID int64
+	File        string
+	Size        int64
+	Duration    int64 // ms, 0 = unknown
 }
 
 // PartsByItem returns the media parts of a metadata item, joined through
 // media_items.
 func (d *DB) PartsByItem(itemID int64) ([]Part, error) {
 	rows, err := d.conn.Query(`
-		SELECT p.id, p.file, p.size, IFNULL(p.duration, 0)
+		SELECT p.id, p.media_item_id, p.file, p.size, IFNULL(p.duration, 0)
 		FROM media_parts p
 		JOIN media_items mi ON mi.id = p.media_item_id
 		WHERE mi.metadata_item_id = ?
@@ -90,7 +91,7 @@ func (d *DB) PartsByItem(itemID int64) ([]Part, error) {
 	var out []Part
 	for rows.Next() {
 		var p Part
-		if err := rows.Scan(&p.ID, &p.File, &p.Size, &p.Duration); err != nil {
+		if err := rows.Scan(&p.ID, &p.MediaItemID, &p.File, &p.Size, &p.Duration); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
