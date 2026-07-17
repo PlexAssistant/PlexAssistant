@@ -81,10 +81,18 @@ func BuildSpec(part plexdb.Part, probe *ProbeResult, link *linkres.Link) *plexdb
 			Bitrate:  atoi64(s.BitRate),
 			TypeID:   streamTypeID(s.CodecType),
 		}
-		spec.Streams = append(spec.Streams, row)
+		// The official rows never store NULL here: und/empty falls back
+		// to a language string, and a missing video bitrate uses the
+		// format bitrate. Plex's SQL layer rejects NULLs on these.
+		if row.Language == "" || row.Language == "und" {
+			row.Language = "en"
+		}
 
 		switch s.CodecType {
 		case "video":
+			if row.Bitrate == 0 {
+				row.Bitrate = spec.Bitrate
+			}
 			if spec.VideoCodec == "" {
 				spec.VideoCodec = s.CodecName
 				spec.Width, spec.Height = s.Width, s.Height
@@ -100,6 +108,7 @@ func BuildSpec(part plexdb.Part, probe *ProbeResult, link *linkres.Link) *plexdb
 				spec.AudioChannels = s.Channels
 			}
 		}
+		spec.Streams = append(spec.Streams, row)
 	}
 	return spec
 }
