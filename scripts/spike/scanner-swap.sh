@@ -7,7 +7,7 @@ set -euo pipefail
 
 case "${1:-swap}" in
 swap)
-  docker compose exec -T plex bash -ec '
+  docker compose -f docker-compose.dev.yml exec -T plex bash -ec '
     PLEX="/usr/lib/plexmediaserver/Plex Media Scanner"
     if [ ! -e "$PLEX.real" ]; then
       mv "$PLEX" "$PLEX.real"
@@ -18,7 +18,7 @@ swap)
   '
   ;;
 restore)
-  docker compose exec -T plex bash -ec '
+  docker compose -f docker-compose.dev.yml exec -T plex bash -ec '
     PLEX="/usr/lib/plexmediaserver/Plex Media Scanner"
     if [ -e "$PLEX.real" ]; then
       mv -f "$PLEX.real" "$PLEX"
@@ -29,7 +29,7 @@ restore)
   '
   ;;
 log)
-  docker compose exec -T plex cat /config/spike/scanner.log 2>/dev/null ||
+  docker compose -f docker-compose.dev.yml exec -T plex cat /config/spike/scanner.log 2>/dev/null ||
     echo "no log yet"
   ;;
 *)
