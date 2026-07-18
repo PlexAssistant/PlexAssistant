@@ -62,7 +62,7 @@ func TestDaemonResolveTrustsCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := NewDaemon(cache, "")
+	d := NewDaemon(cache, "", 30)
 	ts := httptest.NewServer(d.Handler())
 	t.Cleanup(ts.Close)
 
@@ -76,12 +76,19 @@ func TestDaemonResolveAndCacheHit(t *testing.T) {
 	cache := newTestCache(t)
 
 	exp := time.Now().Add(time.Hour).Unix()
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/dl/ep1?t="+strconv.FormatInt(exp, 10)+".sig", http.StatusFound)
-	}))
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /file/{id}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dl/"+r.PathValue("id")+"?t="+strconv.FormatInt(exp, 10)+".sig", http.StatusFound)
+	})
+	mux.HandleFunc("GET /dl/{id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Range", "bytes 0-0/10")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("0"))
+	})
+	upstream := httptest.NewServer(mux)
 	t.Cleanup(upstream.Close)
 
-	d := NewDaemon(cache, "")
+	d := NewDaemon(cache, "", 30)
 	ts := httptest.NewServer(d.Handler())
 	t.Cleanup(ts.Close)
 
@@ -103,6 +110,80 @@ func TestDaemonResolveAndCacheHit(t *testing.T) {
 	stats, err := cache.Stats()
 	if err != nil || stats.Entries != 1 || stats.Hits < 1 {
 		t.Fatalf("stats = %+v err=%v", stats, err)
+	}
+}
+
+// TestDaemonGuardBreaker: three failing scan resolves open the breaker;
+// a playback refresh bypasses it and, once the upstream recovered,
+// resets it.
+func TestDaemonGuardBreaker(t *testing.T) {
+	cache := newTestCache(t)
+
+	broken := true
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if broken {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, "/dl/ok", http.StatusFound)
+	})
+	mux.HandleFunc("GET /dl/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Range", "bytes 0-0/10")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("0"))
+	})
+	upstream := httptest.NewServer(mux)
+	t.Cleanup(upstream.Close)
+
+	d := NewDaemon(cache, "", 30)
+	ts := httptest.NewServer(d.Handler())
+	t.Cleanup(ts.Close)
+
+	target := func(ep string) string { return upstream.URL + "/file/" + ep }
+
+	// an outage fails distinct targets; after three the breaker opens
+	for i, ep := range []string{"ep1", "ep2", "ep3"} {
+		resp, err := http.Post(ts.URL+"/resolve", "application/json",
+			bytes.NewBufferString(`{"target":"`+target(ep)+`"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadGateway {
+			t.Fatalf("resolve %d: status %d", i, resp.StatusCode)
+		}
+	}
+	blocked, err := http.Post(ts.URL+"/resolve", "application/json",
+		bytes.NewBufferString(`{"target":"`+target("ep4")+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = blocked.Body.Close()
+	if blocked.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("after 3 failures: status %d, want 503", blocked.StatusCode)
+	}
+
+	// upstream recovers; playback refresh bypasses the open breaker
+	broken = false
+	resp, err := http.Post(ts.URL+"/refresh", "application/json",
+		bytes.NewBufferString(`{"target":"`+target("ep4")+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("forced refresh: status %d", resp.StatusCode)
+	}
+
+	// the forced success closed the breaker for scans again
+	fresh := resolveVia(t, ts.URL, target("ep5"))
+	if fresh.Cached {
+		t.Fatal("ep5 was never resolved before")
+	}
+	cached := resolveVia(t, ts.URL, target("ep5"))
+	if !cached.Cached {
+		t.Fatal("second resolve must be a cache hit")
 	}
 }
 

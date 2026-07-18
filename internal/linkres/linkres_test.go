@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func TestParseSTRM(t *testing.T) {
@@ -108,6 +109,32 @@ func TestResolve(t *testing.T) {
 		t.Fatalf("ua sent = %q", ua)
 	}
 }
+
+func TestSniffExpiry(t *testing.T) {
+	now := time.Now()
+	future := now.Add(time.Hour).Unix()
+	past := now.Add(-time.Hour).Unix()
+
+	tests := []struct {
+		name, url string
+		want      int64
+	}{
+		{"signed token", "http://x/dl/a?t=" + itoa(future) + ".deadbeef", future},
+		{"plain exp", "http://x/dl/a?exp=" + itoa(future), future},
+		{"past ignored", "http://x/dl/a?t=" + itoa(past), 0},
+		{"no timestamp", "http://x/dl/a?sig=abcdef1234", 0},
+		{"wrong length", "http://x/dl/a?t=" + itoa(future) + "9", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := SniffExpiry(tt.url, now); got != tt.want {
+				t.Fatalf("SniffExpiry(%q) = %d, want %d", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 func TestResolveFailures(t *testing.T) {
 	ts := newCloud(t, nil)

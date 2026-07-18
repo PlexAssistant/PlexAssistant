@@ -5,22 +5,34 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"time"
 
 	"github.com/PlexAssistant/PlexAssistant/internal/linkres"
 )
 
 // Daemon serves the link cache over a unix socket. Semantics: a link is
 // resolved once and then trusted forever; refresh happens only when a
-// caller reports it dead while playing.
+// caller reports it dead while playing. Scan-driven resolutions pass a
+// breaker, a dead-link ledger and a per-domain quota; playback (refresh)
+// bypasses all three but its outcome still feeds them.
 type Daemon struct {
-	cache *Cache
-	ua    string
+	cache    *Cache
+	ua       string
+	breakers *breakerSet
+	quota    *quota
 }
 
-// NewDaemon wires a daemon over cache, resolving with ua.
-func NewDaemon(cache *Cache, ua string) *Daemon {
-	return &Daemon{cache: cache, ua: ua}
+// NewDaemon wires a daemon over cache, resolving with ua and a
+// scan-resolution quota of quotaPerHour per upstream domain.
+func NewDaemon(cache *Cache, ua string, quotaPerHour int) *Daemon {
+	return &Daemon{
+		cache:    cache,
+		ua:       ua,
+		breakers: newBreakerSet(),
+		quota:    newQuota(quotaPerHour, time.Hour),
+	}
 }
 
 // Handler is the HTTP API; also usable for tests over TCP.
@@ -30,6 +42,15 @@ func (d *Daemon) Handler() http.Handler {
 	mux.HandleFunc("POST /refresh", d.handleRefresh)
 	mux.HandleFunc("GET /state", d.handleState)
 	return mux
+}
+
+// hostOf extracts the upstream domain of a target URL.
+func hostOf(target string) string {
+	u, err := url.Parse(target)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 // Serve listens on the unix socket and blocks.
@@ -66,6 +87,25 @@ func (d *Daemon) handleResolve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, linkResponse{Direct: entry.Direct, ExpiresAt: entry.ExpiresAt, Cached: true})
 		return
 	}
+
+	// gatekeeping for scan-driven resolutions only
+	now := time.Now()
+	domain := hostOf(req.Target)
+	if allowed, _ := d.breakers.get(domain).Allow(now, false); !allowed {
+		http.Error(w, "breaker open for "+domain, http.StatusServiceUnavailable)
+		return
+	}
+	if skip, err := d.cache.ShouldSkip(req.Target, now); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	} else if skip {
+		http.Error(w, "target backing off", http.StatusTooManyRequests)
+		return
+	}
+	if !d.quota.Allow(domain, now) {
+		http.Error(w, "quota exceeded for "+domain, http.StatusTooManyRequests)
+		return
+	}
 	d.resolveAndStore(r.Context(), w, req.Target, false)
 }
 
@@ -85,13 +125,32 @@ func (d *Daemon) handleState(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, stats)
+	failures, _ := d.cache.FailureCount()
+	writeJSON(w, map[string]any{
+		"entries":  stats.Entries,
+		"hits":     stats.Hits,
+		"failures": failures,
+		"breakers": d.breakers.snapshot(),
+		"quota":    d.quota.usage(time.Now()),
+	})
 }
 
-func (d *Daemon) resolveAndStore(ctx context.Context, w http.ResponseWriter, target string, refresh bool) {
+func (d *Daemon) resolveAndStore(ctx context.Context, w http.ResponseWriter, target string, force bool) {
+	now := time.Now()
+	domain := hostOf(target)
 	link, err := linkres.Resolve(ctx, target, d.ua)
 	if err != nil {
+		d.breakers.get(domain).RecordFailure(now)
+		if err := d.cache.RecordFailure(target, now); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	d.breakers.get(domain).RecordSuccess()
+	if err := d.cache.ClearFailure(target); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := d.cache.Put(&Entry{
@@ -103,7 +162,7 @@ func (d *Daemon) resolveAndStore(ctx context.Context, w http.ResponseWriter, tar
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, linkResponse{Direct: link.URL, ExpiresAt: link.ExpiresAt, Cached: refresh})
+	writeJSON(w, linkResponse{Direct: link.URL, ExpiresAt: link.ExpiresAt, Cached: force})
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
