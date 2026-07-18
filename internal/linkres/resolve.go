@@ -91,7 +91,7 @@ func Resolve(ctx context.Context, rawURL, ua string) (*Link, error) {
 }
 
 // SniffExpiry looks for a plausible unix-seconds timestamp in the URL
-// query (signed links commonly carry exp/expires/t=...). It is
+// query (signed links commonly carry exp/expires/t=<exp>.<sig>). It is
 // informational only; returned 0 means unknown.
 func SniffExpiry(rawURL string, now time.Time) int64 {
 	u, err := url.Parse(rawURL)
@@ -101,10 +101,11 @@ func SniffExpiry(rawURL string, now time.Time) int64 {
 	var best int64
 	for _, values := range u.Query() {
 		for _, v := range values {
-			if len(v) != 10 {
+			digits := leadingDigits(v)
+			if len(digits) != 10 {
 				continue // signatures are longer or hex
 			}
-			n, err := strconv.ParseInt(v, 10, 64)
+			n, err := strconv.ParseInt(digits, 10, 64)
 			if err != nil || n <= now.Unix() {
 				continue
 			}
@@ -114,6 +115,15 @@ func SniffExpiry(rawURL string, now time.Time) int64 {
 		}
 	}
 	return best
+}
+
+// leadingDigits returns the run of digits at the start of s.
+func leadingDigits(s string) string {
+	end := 0
+	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+		end++
+	}
+	return s[:end]
 }
 
 // contentRangeTotal parses "bytes 0-0/12345" into 12345.

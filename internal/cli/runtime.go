@@ -27,13 +27,15 @@ func newRuntimeCmd() *cobra.Command {
 			}
 			defer func() { _ = cache.Close() }()
 
-			fmt.Printf("runtime: listening on %s, cache %s\n", sock, cachePath)
-			return runtime.NewDaemon(cache, ua).Serve(sock)
+			quota, _ := cmd.Flags().GetInt("quota-per-hour")
+			fmt.Printf("runtime: listening on %s, cache %s, quota %d/h\n", sock, cachePath, quota)
+			return runtime.NewDaemon(cache, ua, quota).Serve(sock)
 		},
 	}
 	cmd.Flags().String("sock", "/run/assistant.sock", "unix socket path")
 	cmd.Flags().String("cache",
 		filepath.Join("/config/assistant", "cache.db"), "cache database path")
 	cmd.Flags().String("ua", linkres.DefaultUA, "user agent for cloud drives")
+	cmd.Flags().Int("quota-per-hour", 30, "scan resolutions per upstream domain per hour")
 	return cmd
 }

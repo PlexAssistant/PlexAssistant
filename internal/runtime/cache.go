@@ -52,6 +52,10 @@ func OpenCache(path string) (*Cache, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if _, err := db.Exec(failuresSchema); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return &Cache{db: db}, nil
 }
 
@@ -73,10 +77,14 @@ func (c *Cache) Get(target string) (*Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = c.db.Exec(
+	if _, err := c.db.Exec(
 		`UPDATE links SET hits=hits+1, last_used=? WHERE target_url=?`,
-		now(), target)
-	return &e, err
+		now(), target); err != nil {
+		return nil, err
+	}
+	e.Hits++
+	e.LastUsed = now()
+	return &e, nil
 }
 
 // Put upserts an entry.
