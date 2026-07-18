@@ -12,6 +12,10 @@ import (
 	"github.com/PlexAssistant/PlexAssistant/internal/linkres"
 )
 
+// DefaultSock is the daemon socket, created by the s6 service with the
+// right ownership.
+const DefaultSock = "/run/assistant/assistant.sock"
+
 // Daemon serves the link cache over a unix socket. Semantics: a link is
 // resolved once and then trusted forever; refresh happens only when a
 // caller reports it dead while playing. Scan-driven resolutions pass a

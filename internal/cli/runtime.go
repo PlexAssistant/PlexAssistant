@@ -32,7 +32,7 @@ func newRuntimeCmd() *cobra.Command {
 			return runtime.NewDaemon(cache, ua, quota).Serve(sock)
 		},
 	}
-	cmd.Flags().String("sock", "/run/assistant.sock", "unix socket path")
+	cmd.Flags().String("sock", runtime.DefaultSock, "unix socket path")
 	cmd.Flags().String("cache",
 		filepath.Join("/config/assistant", "cache.db"), "cache database path")
 	cmd.Flags().String("ua", linkres.DefaultUA, "user agent for cloud drives")

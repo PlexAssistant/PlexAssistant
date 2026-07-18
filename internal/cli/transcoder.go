@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/PlexAssistant/PlexAssistant/internal/linkres"
+	"github.com/PlexAssistant/PlexAssistant/internal/runtime"
 	"github.com/PlexAssistant/PlexAssistant/internal/transcoder"
 )
 
@@ -19,7 +20,7 @@ func newTranscoderCmd() *cobra.Command {
 		DisableFlagParsing: true,
 		RunE: func(_ *cobra.Command, args []string) error {
 			res := transcoder.DaemonResolver{
-				SockPath:  envDefault("ASSISTANT_SOCK", "/run/assistant.sock"),
+				SockPath:  envDefault("ASSISTANT_SOCK", runtime.DefaultSock),
 				UserAgent: linkres.DefaultUA,
 			}
 			os.Exit(transcoder.Run(args, os.Args[0]+".real", res))
