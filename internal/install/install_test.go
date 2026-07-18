@@ -6,22 +6,24 @@ import (
 	"testing"
 )
 
-// newFixture creates a fake plex dir with one target binary and a fake
-// assistant binary, returning the installer and both paths.
+// newFixture creates a fake plex dir with both target binaries and a
+// fake assistant binary, returning the installer and the scanner path.
 func newFixture(t *testing.T) (*Installer, string) {
 	t.Helper()
 	plexDir := t.TempDir()
 	binDir := t.TempDir()
 
-	target := filepath.Join(plexDir, "Plex Media Scanner")
-	if err := os.WriteFile(target, []byte("plex original"), 0o755); err != nil {
-		t.Fatal(err)
+	for _, name := range Targets {
+		if err := os.WriteFile(filepath.Join(plexDir, name), []byte("plex original"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	bin := filepath.Join(binDir, "assistant")
 	if err := os.WriteFile(bin, []byte("assistant bytes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return &Installer{PlexDir: plexDir, BinPath: bin, Version: "test"}, target
+	return &Installer{PlexDir: plexDir, BinPath: bin, Version: "test"},
+		filepath.Join(plexDir, "Plex Media Scanner")
 }
 
 func TestInstallVerifyRevert(t *testing.T) {
