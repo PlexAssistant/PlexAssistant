@@ -4,6 +4,9 @@ default:
 build:
     go build -o assistant ./cmd/assistant
 
+build-linux:
+    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o dist/assistant-linux-arm64 ./cmd/assistant
+
 test:
     go test ./...
 
@@ -26,19 +29,18 @@ gen-media base="http://fakecloud:8399" out="testdata":
 gen-bulk count="500" base="http://fakecloud:8399" out="testdata":
     ./scripts/gen-bulk-strm.sh {{count}} {{base}} {{out}}
 
-rig-up:
+rig-up: build-linux
     docker compose -f docker-compose.dev.yml up -d
 
 rig-down:
     docker compose -f docker-compose.dev.yml down
 
-# cross-build for the rig container and install into Plex
-deploy:
-    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o dist/assistant-linux-arm64 ./cmd/assistant
+# rebuild the binary, ship it in, re-install and bounce the daemon
+deploy: build-linux
     docker compose -f docker-compose.dev.yml cp dist/assistant-linux-arm64 plex:/usr/local/bin/assistant
     docker compose -f docker-compose.dev.yml exec -T plex chmod +x /usr/local/bin/assistant
     docker compose -f docker-compose.dev.yml exec -T plex /usr/local/bin/assistant install
-    docker compose -f docker-compose.dev.yml exec -T plex bash -c 'mkdir -p /config/assistant; pkill -f "[a]ssistant runtime" || true' && sleep 1 && docker compose -f docker-compose.dev.yml exec -d plex /usr/local/bin/assistant runtime
+    docker compose -f docker-compose.dev.yml exec -T plex s6-svc -r /run/service/assistant-runtime
 
 undeploy:
     docker compose -f docker-compose.dev.yml exec -T plex /usr/local/bin/assistant install revert

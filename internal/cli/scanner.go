@@ -10,6 +10,7 @@ import (
 
 	"github.com/PlexAssistant/PlexAssistant/internal/linkres"
 	"github.com/PlexAssistant/PlexAssistant/internal/plexdb"
+	"github.com/PlexAssistant/PlexAssistant/internal/runtime"
 	"github.com/PlexAssistant/PlexAssistant/internal/scanner"
 )
 
@@ -28,7 +29,7 @@ func newScannerCmd() *cobra.Command {
 	cmd.Flags().String("library-db", plexdb.DefaultPath, "library database path")
 	cmd.Flags().String("ffprobe", envDefault("ASSISTANT_FFPROBE", "ffprobe"), "ffprobe path")
 	cmd.Flags().String("ua", linkres.DefaultUA, "user agent for cloud drives")
-	cmd.Flags().String("runtime-sock", "/run/assistant.sock",
+	cmd.Flags().String("runtime-sock", runtime.DefaultSock,
 		"runtime daemon socket; unreachable = resolve directly")
 	cmd.FParseErrWhitelist = cobra.FParseErrWhitelist{UnknownFlags: true}
 	return cmd

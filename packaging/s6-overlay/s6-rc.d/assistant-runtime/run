@@ -1,0 +1,7 @@
+#!/usr/bin/with-contenv bash
+# Resident link-cache daemon; s6 restarts it on failure.
+BIN=/usr/local/bin/assistant
+[ -x "$BIN" ] || BIN=/dist/assistant-linux-arm64
+mkdir -p /run/assistant
+chown abc:abc /run/assistant 2>/dev/null || true
+exec s6-setuidgid abc "$BIN" runtime --sock /run/assistant/assistant.sock
