@@ -28,6 +28,7 @@ type WriteSpec struct {
 	Container     string
 	VideoCodec    string
 	AudioCodec    string
+	ColorTRC      string // e.g. smpte2084; empty for SDR
 	AspectRatio   float64
 	FPS           float64
 	AudioChannels int
@@ -61,12 +62,12 @@ func (d *DB) UpdateMedia(spec *WriteSpec) error {
 	if _, err := tx.Exec(`
 		UPDATE media_items SET
 			width=?, height=?, size=?, duration=?, bitrate=?,
-			container=?, video_codec=?, audio_codec=?,
+			container=?, video_codec=?, audio_codec=?, color_trc=?,
 			display_aspect_ratio=?, frames_per_second=?, audio_channels=?,
 			display_offset=0, media_analysis_version=8, updated_at=?
 		WHERE id=?`,
 		spec.Width, spec.Height, spec.Size, spec.DurationMs, spec.Bitrate,
-		spec.Container, spec.VideoCodec, spec.AudioCodec,
+		spec.Container, spec.VideoCodec, spec.AudioCodec, spec.ColorTRC,
 		spec.AspectRatio, spec.FPS, spec.AudioChannels,
 		now, spec.MediaItemID); err != nil {
 		return err

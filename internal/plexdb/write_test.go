@@ -22,7 +22,7 @@ func newWriteFixture(t *testing.T) *DB {
 		`INSERT INTO metadata_items VALUES (42, NULL)`,
 		`CREATE TABLE media_items (id INTEGER PRIMARY KEY, metadata_item_id INTEGER,
 		   width INTEGER, height INTEGER, size INTEGER, duration INTEGER, bitrate INTEGER,
-		   container TEXT, video_codec TEXT, audio_codec TEXT,
+		   container TEXT, video_codec TEXT, audio_codec TEXT, color_trc TEXT,
 		   display_aspect_ratio REAL, frames_per_second REAL, audio_channels INTEGER,
 		   display_offset INTEGER, media_analysis_version INTEGER, updated_at INTEGER)`,
 		`INSERT INTO media_items (id, metadata_item_id) VALUES (7, 42)`,
@@ -47,6 +47,7 @@ func sampleSpec() *WriteSpec {
 		MediaItemID: 7, PartID: 70,
 		Width: 1280, Height: 720, Size: 3757806, DurationMs: 20023,
 		Bitrate: 1501395, Container: "mkv", VideoCodec: "h264", AudioCodec: "aac",
+		ColorTRC: "smpte2084",
 		AspectRatio: 1.7777777910232544, FPS: 24.0, AudioChannels: 1,
 		Streams: []StreamRow{
 			{TypeID: 1, Codec: "h264", Index: 0, Bitrate: 1501395},
@@ -63,12 +64,15 @@ func TestUpdateMedia(t *testing.T) {
 	}
 
 	var w, h, dur int
-	var container string
+	var container, trc string
 	err := db.conn.QueryRow(
-		`SELECT width, height, duration, container FROM media_items WHERE id=7`,
-	).Scan(&w, &h, &dur, &container)
+		`SELECT width, height, duration, container, IFNULL(color_trc,'') FROM media_items WHERE id=7`,
+	).Scan(&w, &h, &dur, &container, &trc)
 	if err != nil || w != 1280 || h != 720 || dur != 20023 || container != "mkv" {
 		t.Fatalf("media_items: %v %d %d %d %s", err, w, h, dur, container)
+	}
+	if trc != "smpte2084" {
+		t.Fatalf("color_trc = %q, want smpte2084", trc)
 	}
 
 	var pSize, pDur int64
