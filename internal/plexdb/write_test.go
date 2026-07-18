@@ -47,7 +47,7 @@ func sampleSpec() *WriteSpec {
 		MediaItemID: 7, PartID: 70,
 		Width: 1280, Height: 720, Size: 3757806, DurationMs: 20023,
 		Bitrate: 1501395, Container: "mkv", VideoCodec: "h264", AudioCodec: "aac",
-		ColorTRC: "smpte2084",
+		ColorTRC:    "smpte2084",
 		AspectRatio: 1.7777777910232544, FPS: 24.0, AudioChannels: 1,
 		Streams: []StreamRow{
 			{TypeID: 1, Codec: "h264", Index: 0, Bitrate: 1501395},

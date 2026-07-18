@@ -48,16 +48,23 @@ func TestRewriteArgs(t *testing.T) {
 
 	res := &fakeResolver{links: map[string]string{"http://x/file/ep1": "http://x/dl/fresh"}}
 	args := []string{"-codec:0", "h264", "-i", strmA, "-i", strmB, "-i", local}
-	out, swaps := RewriteArgs(context.Background(), args, res)
+	out, swaps := RewriteArgs(context.Background(), args, res, "UA/1")
 
 	if len(swaps) != 1 {
 		t.Fatalf("swaps = %+v", swaps)
 	}
-	if out[3] != "http://x/dl/fresh" {
-		t.Fatalf("strm input not swapped: %s", out[3])
+	// swapped input is preceded by the resolving user agent
+	want := []string{"-codec:0", "h264", "-user_agent", "UA/1", "-i", "http://x/dl/fresh", "-i", strmB, "-i", local}
+	if len(out) != len(want) {
+		t.Fatalf("out = %v", out)
 	}
-	if out[5] != strmB || out[7] != local {
-		t.Fatalf("other inputs must stay: %s %s", out[5], out[7])
+	for i := range want {
+		if out[i] != want[i] {
+			t.Fatalf("out[%d] = %s, want %s (full: %v)", i, out[i], want[i], out)
+		}
+	}
+	if swaps[0].ArgIndex != 5 {
+		t.Fatalf("swap index = %d", swaps[0].ArgIndex)
 	}
 }
 
@@ -84,7 +91,7 @@ func TestRunRetriesOnDeadLink(t *testing.T) {
 		refresh: map[string]string{"http://x/file/ep1": "http://x/dl/good"},
 	}
 
-	code := Run([]string{"-i", strm}, fakeReal(t), res)
+	code := Run([]string{"-i", strm}, fakeReal(t), res, "UA/1")
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 after refresh retry", code)
 	}
@@ -100,7 +107,7 @@ func TestRunNoSwapsNoRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	// fake binary still fails on DEADLINK, but no swap means no retry
-	code := Run([]string{"-i", local, "DEADLINK"}, fakeReal(t), &fakeResolver{})
+	code := Run([]string{"-i", local, "DEADLINK"}, fakeReal(t), &fakeResolver{}, "UA/1")
 	if code != 9 {
 		t.Fatalf("exit = %d, want 9 (no retry without swap)", code)
 	}
