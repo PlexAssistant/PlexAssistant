@@ -100,12 +100,10 @@ func BuildSpec(part plexdb.Part, probe *ProbeResult, link *linkres.Link) *plexdb
 			Bitrate:  atoi64(s.BitRate),
 			TypeID:   streamTypeID(s.CodecType),
 		}
-		// The official rows never store NULL here: und/empty falls back
-		// to a language string, and a missing video bitrate uses the
-		// format bitrate. Plex's SQL layer rejects NULLs on these.
-		if row.Language == "" || row.Language == "und" {
-			row.Language = "en"
-		}
+		// The official rows never store NULL here and Plex maps stream
+		// languages with ISO 639-2/B three-letter codes (eng, chi, fre);
+		// two-letter codes surface as "Unknown" in the client UI.
+		row.Language = normalizeLang(row.Language)
 
 		switch s.CodecType {
 		case "video":
@@ -142,6 +140,30 @@ func streamTypeID(codecType string) int {
 		return 3
 	}
 	return 0
+}
+
+// threeLetter maps ISO 639-1 codes ffprobe sometimes emits to the
+// ISO 639-2/B codes Plex displays ("en" shows as Unknown, "eng" as
+// English).
+var threeLetter = map[string]string{
+	"en": "eng", "zh": "chi", "ja": "jpn", "ko": "kor", "de": "ger",
+	"fr": "fre", "es": "spa", "pt": "por", "ru": "rus", "it": "ita",
+	"th": "tha", "vi": "vie", "ar": "ara", "nl": "dut", "pl": "pol",
+	"tr": "tur", "sv": "swe", "da": "dan", "fi": "fin", "nb": "nob",
+	"cs": "cze", "el": "gre", "he": "heb", "hu": "hun", "id": "ind",
+	"ms": "may", "ro": "rum", "uk": "ukr", "hi": "hin", "fa": "per",
+}
+
+// normalizeLang maps to the three-letter code, defaulting to eng for
+// und/empty like the official rows.
+func normalizeLang(lang string) string {
+	if lang == "" || lang == "und" {
+		return "eng"
+	}
+	if three, ok := threeLetter[lang]; ok {
+		return three
+	}
+	return lang
 }
 
 var containerNames = map[string]string{
