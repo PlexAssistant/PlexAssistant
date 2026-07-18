@@ -1,8 +1,8 @@
 #!/bin/bash
-# Scanner observation stub: logs invocation details, then runs the real
-# scanner (.real sibling) and forwards its stdout and exit code.
-# Log lands in /config/spike/scanner.log (host: ./data/config/spike/).
-LOG=/config/spike/scanner.log
+# Observation stub: logs invocation details, then runs the real binary
+# (.real sibling) and forwards its stdout and exit code.
+# Log lands in /config/spike/<argv0-basename>.log (host: ./data/config/spike/).
+LOG="/config/spike/$(basename "$0" | tr ' ' '_').log"
 REAL="$0.real"
 mkdir -p "$(dirname "$LOG")"
 {
