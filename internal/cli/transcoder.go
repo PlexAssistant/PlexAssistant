@@ -23,7 +23,7 @@ func newTranscoderCmd() *cobra.Command {
 				SockPath:  envDefault("ASSISTANT_SOCK", runtime.DefaultSock),
 				UserAgent: linkres.DefaultUA,
 			}
-			os.Exit(transcoder.Run(args, os.Args[0]+".real", res))
+			os.Exit(transcoder.Run(args, os.Args[0]+".real", res, linkres.DefaultUA))
 			return nil
 		},
 	}

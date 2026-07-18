@@ -70,24 +70,30 @@ type Swap struct {
 }
 
 // RewriteArgs replaces every "-i <path>.strm" input with a resolved
-// direct link.
-func RewriteArgs(ctx context.Context, args []string, res Resolver) ([]string, []Swap) {
-	out := append([]string(nil), args...)
+// direct link and injects the resolving user agent before it: cloud
+// CDNs bind links to the UA that resolved them, and the original
+// transcoder would otherwise fetch with ffmpeg's default one.
+func RewriteArgs(ctx context.Context, args []string, res Resolver, ua string) ([]string, []Swap) {
+	out := make([]string, 0, len(args)+4)
 	var swaps []Swap
-	for i := 0; i+1 < len(out); i++ {
-		if out[i] != "-i" || !strings.HasSuffix(strings.ToLower(out[i+1]), ".strm") {
-			continue
+	for i := 0; i < len(args); i++ {
+		if i+1 < len(args) && args[i] == "-i" &&
+			strings.HasSuffix(strings.ToLower(args[i+1]), ".strm") {
+			target, err := linkres.ParseSTRM(args[i+1])
+			if err == nil && target.IsRemote {
+				if direct, err := res.Resolve(ctx, target.Value); err == nil && direct != "" {
+					out = append(out, "-user_agent", ua, "-i", direct)
+					swaps = append(swaps, Swap{
+						Target:   target.Value,
+						Direct:   direct,
+						ArgIndex: len(out) - 1,
+					})
+					i++ // consumed the strm path
+					continue
+				}
+			}
 		}
-		target, err := linkres.ParseSTRM(out[i+1])
-		if err != nil || !target.IsRemote {
-			continue
-		}
-		direct, err := res.Resolve(ctx, target.Value)
-		if err != nil || direct == "" {
-			continue // leave the strm; the original handles it
-		}
-		out[i+1] = direct
-		swaps = append(swaps, Swap{Target: target.Value, Direct: direct, ArgIndex: i + 1})
+		out = append(out, args[i])
 	}
 	return out, swaps
 }
@@ -99,9 +105,9 @@ const fastFailWindow = 30 * time.Second
 // Run rewrites the args, runs the preserved original as a child with
 // signal relaying, and retries once with refreshed links when it dies
 // fast with our swap in place. It returns the final exit code.
-func Run(args []string, realPath string, res Resolver) int {
+func Run(args []string, realPath string, res Resolver, ua string) int {
 	ctx := context.Background()
-	rewritten, swaps := RewriteArgs(ctx, args, res)
+	rewritten, swaps := RewriteArgs(ctx, args, res, ua)
 
 	start := time.Now()
 	code := runChild(realPath, rewritten)
