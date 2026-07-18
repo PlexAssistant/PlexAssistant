@@ -118,6 +118,7 @@ func BuildSpec(part plexdb.Part, probe *ProbeResult, link *linkres.Link) *plexdb
 					spec.AspectRatio = float64(s.Width) / float64(s.Height)
 				}
 				spec.FPS = parseFPS(s.FrameRate)
+				spec.ColorTRC = s.ColorTransfer
 			}
 		case "audio":
 			if spec.AudioCodec == "" {

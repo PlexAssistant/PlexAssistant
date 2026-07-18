@@ -74,6 +74,7 @@ type Stream struct {
 	Channels           int    `json:"channels"`
 	SampleRate         string `json:"sample_rate"`
 	FrameRate          string `json:"avg_frame_rate"`
+	ColorTransfer      string `json:"color_transfer"`       // e.g. "smpte2084" (HDR10)
 	DisplayAspectRatio string `json:"display_aspect_ratio"` // e.g. "16:9"
 	Tags               struct {
 		Language string `json:"language"`
