@@ -65,12 +65,12 @@ func TestBuildSpec(t *testing.T) {
 		t.Fatalf("subtitle lang: %+v", spec.Streams[2])
 	}
 	// und falls back to a language string, never NULL
-	if spec.Streams[1].Language != "en" {
+	if spec.Streams[1].Language != "eng" {
 		t.Fatalf("audio lang fallback: %+v", spec.Streams[1])
 	}
-	// video stream bitrate falls back to the format bitrate
-	if spec.Streams[0].Bitrate != 1501731 {
-		t.Fatalf("video bitrate fallback: %+v", spec.Streams[0])
+	// a present stream bitrate is kept (fallback only fires when missing)
+	if spec.Streams[0].Bitrate != 612000 {
+		t.Fatalf("video stream bitrate: %+v", spec.Streams[0])
 	}
 }
 
@@ -120,5 +120,19 @@ func TestParseHelpers(t *testing.T) {
 	}
 	if c := mapContainer("mov,mp4,m4a,3gp,3g2,mj2"); c != "mp4" {
 		t.Fatalf("mapContainer: %s", c)
+	}
+}
+
+func TestNormalizeLang(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"", "eng"}, {"und", "eng"},
+		{"en", "eng"}, {"zh", "chi"}, {"nl", "dut"},
+		{"eng", "eng"}, {"chi", "chi"}, {"fre", "fre"},
+		{"xx", "xx"}, // unknown passthrough
+	}
+	for _, tt := range tests {
+		if got := normalizeLang(tt.in); got != tt.want {
+			t.Errorf("normalizeLang(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
