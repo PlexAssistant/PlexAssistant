@@ -14,9 +14,10 @@ import (
 	"time"
 )
 
-// Targets are the Plex binaries we take over; the scanner is the analysis
-// hook ("--analyze --item N"), the transcoder join later.
-var Targets = []string{"Plex Media Scanner"}
+// Targets are the Plex binaries we take over: the scanner is the
+// analysis hook ("--analyze --item N"), the transcoder is the playback
+// hook (its "-i" input is the strm path).
+var Targets = []string{"Plex Media Scanner", "Plex Transcoder"}
 
 const stateFile = "assistant-install.json"
 
