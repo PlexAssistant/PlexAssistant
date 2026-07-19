@@ -70,12 +70,22 @@ type Stream struct {
 	CodecType          string `json:"codec_type"` // video | audio | subtitle
 	Width              int    `json:"width"`
 	Height             int    `json:"height"`
+	CodedWidth         int    `json:"coded_width"`
+	CodedHeight        int    `json:"coded_height"`
 	BitRate            string `json:"bit_rate"`
 	Duration           string `json:"duration"`
 	Channels           int    `json:"channels"`
 	SampleRate         string `json:"sample_rate"`
 	FrameRate          string `json:"avg_frame_rate"`
-	ColorTransfer      string `json:"color_transfer"`       // e.g. "smpte2084" (HDR10)
+	ColorTransfer      string `json:"color_transfer"`  // e.g. "smpte2084" (HDR10)
+	ColorPrimaries     string `json:"color_primaries"` // e.g. "bt2020"
+	ColorSpace         string `json:"color_space"`     // e.g. "bt2020nc"
+	ColorRange         string `json:"color_range"`     // "tv" | "pc"
+	PixFmt             string `json:"pix_fmt"`         // e.g. "yuv420p10le"
+	ChromaLocation     string `json:"chroma_location"`
+	BitDepth           string `json:"bits_per_raw_sample"`
+	Level              int    `json:"level"`
+	Refs               int    `json:"refs"`
 	DisplayAspectRatio string `json:"display_aspect_ratio"` // e.g. "16:9"
 	Tags               struct {
 		Language string `json:"language"`

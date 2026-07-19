@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/PlexAssistant/PlexAssistant/internal/linkres"
@@ -120,6 +121,36 @@ func TestParseHelpers(t *testing.T) {
 	}
 	if c := mapContainer("mov,mp4,m4a,3gp,3g2,mj2"); c != "mp4" {
 		t.Fatalf("mapContainer: %s", c)
+	}
+}
+
+func TestBuildVideoExtra(t *testing.T) {
+	s := &Stream{
+		Width: 3840, Height: 2160, CodedWidth: 3840, CodedHeight: 2160,
+		Profile: "Main 10", PixFmt: "yuv420p10le", ColorRange: "tv",
+		ChromaLocation: "left", BitDepth: "10", Level: 120, Refs: 1,
+		FrameRate: "24000/1001",
+	}
+	extra := buildVideoExtra(s)
+
+	for _, want := range []string{
+		`"ma:bitDepth":"10"`, `"ma:chromaSubsampling":"4:2:0"`,
+		`"ma:profile":"main 10"`, `"ma:level":"120"`,
+		`"ma:height":"2160"`, `"ma:scanType":"progressive"`,
+		`"ma:frameRate":"23.976"`,
+	} {
+		if !strings.Contains(extra, want) {
+			t.Errorf("extra missing %s in %s", want, extra)
+		}
+	}
+	if !strings.Contains(extra, `"url":"ma%3AbitDepth=10`) {
+		t.Errorf("url-encoded copy missing: %s", extra)
+	}
+
+	// bit depth falls back to the pix_fmt suffix
+	s2 := &Stream{PixFmt: "yuv420p", Profile: "High", Width: 1280, Height: 720}
+	if e := buildVideoExtra(s2); !strings.Contains(e, `"ma:bitDepth":"8"`) {
+		t.Errorf("8-bit fallback: %s", e)
 	}
 }
 
