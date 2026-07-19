@@ -7,12 +7,13 @@ import (
 
 // StreamRow is one media_streams row to write.
 type StreamRow struct {
-	TypeID   int // 1 video, 2 audio, 3 subtitle
-	Codec    string
-	Language string
-	Index    int
-	Channels int
-	Bitrate  int64
+	TypeID    int // 1 video, 2 audio, 3 subtitle
+	Codec     string
+	Language  string
+	Index     int
+	Channels  int
+	Bitrate   int64
+	ExtraData string // JSON; ma:profile drives the client's stream label
 }
 
 // WriteSpec is the analyzed media info for one part, shaped exactly like
@@ -93,13 +94,17 @@ func (d *DB) UpdateMedia(spec *WriteSpec) error {
 		if s.Language != "" && s.Language != "und" {
 			lang = s.Language
 		}
+		var extra any
+		if s.ExtraData != "" {
+			extra = s.ExtraData
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO media_streams
 				(stream_type_id, media_item_id, media_part_id, codec, language,
-				 "index", channels, bitrate, "default", forced, updated_at)
-			VALUES (?,?,?,?,?,?,?,?,0,0,?)`,
+				 "index", channels, bitrate, "default", forced, extra_data, updated_at)
+			VALUES (?,?,?,?,?,?,?,?,0,0,?,?)`,
 			s.TypeID, spec.MediaItemID, spec.PartID, s.Codec, lang,
-			s.Index, channels, bitrate, now); err != nil {
+			s.Index, channels, bitrate, extra, now); err != nil {
 			return err
 		}
 	}
