@@ -66,6 +66,7 @@ type Format struct {
 type Stream struct {
 	Index              int    `json:"index"`
 	CodecName          string `json:"codec_name"`
+	Profile            string `json:"profile"`    // e.g. "Main 10", "High"
 	CodecType          string `json:"codec_type"` // video | audio | subtitle
 	Width              int    `json:"width"`
 	Height             int    `json:"height"`

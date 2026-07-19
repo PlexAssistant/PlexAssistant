@@ -2,6 +2,7 @@ package plexdb
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -32,7 +33,7 @@ func newWriteFixture(t *testing.T) *DB {
 		`CREATE TABLE media_streams (id INTEGER PRIMARY KEY AUTOINCREMENT,
 		   stream_type_id INTEGER, media_item_id INTEGER, media_part_id INTEGER,
 		   codec TEXT, language TEXT, "index" INTEGER, channels INTEGER, bitrate INTEGER,
-		   "default" INTEGER, forced INTEGER, updated_at INTEGER)`,
+		   "default" INTEGER, forced INTEGER, extra_data TEXT, updated_at INTEGER)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.conn.Exec(s); err != nil {
@@ -50,7 +51,8 @@ func sampleSpec() *WriteSpec {
 		ColorTRC:    "smpte2084",
 		AspectRatio: 1.7777777910232544, FPS: 24.0, AudioChannels: 1,
 		Streams: []StreamRow{
-			{TypeID: 1, Codec: "h264", Index: 0, Bitrate: 1501395},
+			{TypeID: 1, Codec: "h264", Index: 0, Bitrate: 1501395,
+				ExtraData: `{"ma:profile":"high"}`},
 			{TypeID: 2, Codec: "aac", Index: 1, Language: "und", Channels: 2, Bitrate: 96000},
 		},
 	}
@@ -106,6 +108,16 @@ func TestUpdateMedia(t *testing.T) {
 	if err := db.conn.QueryRow(
 		`SELECT language FROM media_streams WHERE media_item_id=7 AND stream_type_id=2`).Scan(&lang); err != nil || lang != nil {
 		t.Fatalf("und language should be NULL: %v %#v", err, lang)
+	}
+
+	// profile lands in extra_data
+	var extra any
+	if err := db.conn.QueryRow(
+		`SELECT extra_data FROM media_streams WHERE media_item_id=7 AND stream_type_id=1`).Scan(&extra); err != nil {
+		t.Fatal(err)
+	}
+	if s, ok := extra.(string); !ok || !strings.Contains(s, `"ma:profile":"high"`) {
+		t.Fatalf("video extra_data = %#v", extra)
 	}
 
 	// metadata duration synced
