@@ -110,12 +110,9 @@ func BuildSpec(part plexdb.Part, probe *ProbeResult, link *linkres.Link) *plexdb
 			if row.Bitrate == 0 {
 				row.Bitrate = spec.Bitrate
 			}
-			if s.Profile != "" {
-				// the client labels the stream "<profile> (<codec>)";
-				// official rows store it lowercased in extra_data
-				row.ExtraData = fmt.Sprintf(`{"ma:profile":%q}`,
-					strings.ToLower(s.Profile))
-			}
+			// the client's displayTitle ("2160p HDR10", ...) is derived
+			// from the ma: fields in extra_data
+			row.ExtraData = buildVideoExtra(&s)
 			if spec.VideoCodec == "" {
 				spec.VideoCodec = s.CodecName
 				spec.Width, spec.Height = s.Width, s.Height
