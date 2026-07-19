@@ -1,0 +1,14 @@
+# never enter the build context
+.git/
+.direnv/
+private/
+data/
+testdata/
+dist/
+docs/
+config/
+scripts/
+assistant
+TODO.md
+*.db
+*.db-*
