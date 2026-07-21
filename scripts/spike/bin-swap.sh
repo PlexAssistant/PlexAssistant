@@ -11,7 +11,7 @@ PLEX="/usr/lib/plexmediaserver/$BIN"
 
 case "$CMD" in
 swap)
-  docker compose -f docker-compose.dev.yml exec -T plex bash -ec '
+  docker compose -f compose.dev.yaml exec -T plex bash -ec '
     PLEX="/usr/lib/plexmediaserver/'"$BIN"'"
     if [ ! -e "$PLEX.real" ]; then
       mv "$PLEX" "$PLEX.real"
@@ -22,7 +22,7 @@ swap)
   '
   ;;
 restore)
-  docker compose -f docker-compose.dev.yml exec -T plex bash -ec '
+  docker compose -f compose.dev.yaml exec -T plex bash -ec '
     PLEX="/usr/lib/plexmediaserver/'"$BIN"'"
     if [ -e "$PLEX.real" ]; then
       mv -f "$PLEX.real" "$PLEX"
@@ -33,7 +33,7 @@ restore)
   '
   ;;
 log)
-  docker compose -f docker-compose.dev.yml exec -T plex \
+  docker compose -f compose.dev.yaml exec -T plex \
     cat "/config/spike/$(echo "$BIN" | tr ' ' '_').log" 2>/dev/null || echo "no log yet"
   ;;
 *)
