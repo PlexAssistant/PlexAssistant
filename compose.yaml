@@ -1,0 +1,35 @@
+# PlexAssistant — native STRM support for Plex.
+#
+# What it does: the container wraps linuxserver/plex. On boot the
+# assistant installs itself as the Plex scanner/transcoder and runs a
+# link-cache daemon, so .strm items get real media info (duration,
+# resolution, codecs, HDR badge) and playback without hammering your
+# cloud drive.
+#
+# Quick start:
+#   1. Point the /media volume below at your .strm folder
+#   2. Optional: set PLEX_CLAIM from https://plex.tv/claim
+#   3. docker compose up -d --build
+#   4. Open http://<host>:32400, add a TV library pointing at /media
+#      and let it scan — media info appears automatically.
+services:
+  plex:
+    build: .
+    image: plexassistant:latest
+    environment:
+      # run Plex as this host uid/gid (match your file owner)
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Taipei
+      # linuxserver image housekeeping: keep bundled version
+      - VERSION=docker
+      # one-time server claim; leave empty if /config is already claimed
+      - PLEX_CLAIM=
+    volumes:
+      # Plex data: database, metadata, the assistant cache — back this up
+      - ./config:/config
+      # your strm library; add more lines for multiple folders
+      - /path/to/your/strm:/media:ro
+    ports:
+      - "32400:32400"
+    restart: unless-stopped
