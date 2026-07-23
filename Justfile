@@ -30,17 +30,17 @@ gen-bulk count="500" base="http://fakecloud:8399" out="testdata":
     ./scripts/gen-bulk-strm.sh {{count}} {{base}} {{out}}
 
 rig-up: build-linux
-    docker compose -f docker-compose.dev.yml up -d
+    docker compose -f compose.dev.yaml up -d
 
 rig-down:
-    docker compose -f docker-compose.dev.yml down
+    docker compose -f compose.dev.yaml down
 
 # rebuild the binary, ship it in, re-install and bounce the daemon
 deploy: build-linux
-    docker compose -f docker-compose.dev.yml cp dist/assistant-linux-arm64 plex:/usr/local/bin/assistant
-    docker compose -f docker-compose.dev.yml exec -T plex chmod +x /usr/local/bin/assistant
-    docker compose -f docker-compose.dev.yml exec -T plex /usr/local/bin/assistant install
-    docker compose -f docker-compose.dev.yml exec -T plex s6-svc -r /run/service/assistant-runtime
+    docker compose -f compose.dev.yaml cp dist/assistant-linux-arm64 plex:/usr/local/bin/assistant
+    docker compose -f compose.dev.yaml exec -T plex chmod +x /usr/local/bin/assistant
+    docker compose -f compose.dev.yaml exec -T plex /usr/local/bin/assistant install
+    docker compose -f compose.dev.yaml exec -T plex s6-svc -r /run/service/assistant-runtime
 
 undeploy:
-    docker compose -f docker-compose.dev.yml exec -T plex /usr/local/bin/assistant install revert
+    docker compose -f compose.dev.yaml exec -T plex /usr/local/bin/assistant install revert
