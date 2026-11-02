@@ -35,10 +35,7 @@ async fn main() -> ExitCode {
         Some(port) => format!("0.0.0.0:{port}"),
         None => args.addr,
     };
-    println!(
-        "strmock listening on {addr}, root {}",
-        args.root.display()
-    );
+    println!("strmock listening on {addr}, root {}", args.root.display());
     let app = cloud::Server::new(&args.secret, args.root, args.ttl).router();
     let served = match tokio::net::TcpListener::bind(&addr).await {
         Ok(listener) => {
