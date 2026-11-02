@@ -10,7 +10,7 @@
 # rsync for the bitmap subtitle samples.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 mkdir -p "${1:-tests/fixtures}"
 ROOT="$(cd "${1:-tests/fixtures}" && pwd)"
 IMAGE="${2:-lscr.io/linuxserver/plex:latest}"

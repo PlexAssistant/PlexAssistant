@@ -27,10 +27,10 @@ image:
         -t plexassistant:dev .
 
 gen-media base="http://fakecloud:8399" out="testdata":
-    ./scripts/gen-media.sh {{base}} {{out}}
+    ./scripts/rig/gen-media.sh {{base}} {{out}}
 
-gen-bulk count="500" base="http://fakecloud:8399" out="testdata":
-    ./scripts/gen-bulk-strm.sh {{count}} {{base}} {{out}}
+gen-bulk base="http://fakecloud:8399" out="testdata":
+    ./scripts/rig/gen-bulk-strm.sh {{base}} {{out}}
 
 rig-up: build-linux
     docker compose -f compose.dev.yaml up -d --build
