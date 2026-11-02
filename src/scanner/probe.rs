@@ -117,6 +117,8 @@ pub struct Stream {
     pub bit_rate: String,
     pub duration: String,
     pub channels: i64,
+    /// e.g. "stereo", "5.1(side)"
+    pub channel_layout: String,
     pub sample_rate: String,
     #[serde(rename = "avg_frame_rate")]
     pub frame_rate: String,
