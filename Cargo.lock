@@ -725,6 +725,7 @@ name = "plex-assistant"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "libc",
  "reqwest",
  "rusqlite",
  "serde",
