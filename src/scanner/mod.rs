@@ -10,5 +10,5 @@ mod probe;
 mod spec;
 
 pub use analyze::{AnalyzeError, Options, analyze_item, is_strm};
-pub use probe::{Format, ProbeError, ProbeResult, Stream, Tags, duration_ms, probe};
+pub use probe::{Format, FormatTags, ProbeError, ProbeResult, Stream, Tags, duration_ms, probe};
 pub use spec::build_spec;
