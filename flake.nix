@@ -1,5 +1,5 @@
 {
-  description = "PlexAssistant — native STRM support for Plex (Go, migrating to Rust)";
+  description = "PlexAssistant — native STRM support for Plex";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -17,23 +17,22 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            go
-            gotools
-            gopls
-            delve
-            golangci-lint
+            # Rust toolchain
             cargo
             rustc
             rustfmt
             clippy
             rust-analyzer
-            clang
-            sqlite
+            # media probing and test media generation
             ffmpeg
+            # inspecting the Plex library and link cache databases
+            sqlite
+            # task runner and JSON inspection of the daemon's /state
             just
             jq
           ];
-          env.CGO_ENABLED = "1";
+          # lets rust-analyzer resolve std sources
+          env.RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
         };
       });
     };
