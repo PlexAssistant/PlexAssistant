@@ -5,3 +5,4 @@ pub mod linkres;
 pub mod plexdb;
 pub mod runtime;
 pub mod scanner;
+pub mod transcoder;
