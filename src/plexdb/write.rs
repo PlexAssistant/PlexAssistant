@@ -40,6 +40,10 @@ pub struct WriteSpec {
     pub aspect_ratio: f64,
     pub fps: f64,
     pub audio_channels: i64,
+    /// media_items.extra_data (JSON); empty is stored as NULL
+    pub item_extra: String,
+    /// media_parts.extra_data (JSON); empty is stored as NULL
+    pub part_extra: String,
     pub streams: Vec<StreamRow>,
 }
 
@@ -76,7 +80,7 @@ impl Db {
                 width=?, height=?, size=?, duration=?, bitrate=?,
                 container=?, video_codec=?, audio_codec=?, color_trc=?,
                 display_aspect_ratio=?, frames_per_second=?, audio_channels=?,
-                display_offset=0, media_analysis_version=8, updated_at=?
+                display_offset=0, media_analysis_version=8, extra_data=?, updated_at=?
              WHERE id=?",
             params![
                 spec.width,
@@ -91,13 +95,20 @@ impl Db {
                 spec.aspect_ratio,
                 spec.fps,
                 spec.audio_channels,
+                Some(spec.item_extra.as_str()).filter(|e| !e.is_empty()),
                 now,
                 spec.media_item_id,
             ],
         )?;
         tx.execute(
-            "UPDATE media_parts SET size=?, duration=?, updated_at=? WHERE id=?",
-            params![spec.size, spec.duration_ms, now, spec.part_id],
+            "UPDATE media_parts SET size=?, duration=?, extra_data=?, updated_at=? WHERE id=?",
+            params![
+                spec.size,
+                spec.duration_ms,
+                Some(spec.part_extra.as_str()).filter(|e| !e.is_empty()),
+                now,
+                spec.part_id
+            ],
         )?;
         tx.execute(
             "DELETE FROM media_streams WHERE media_item_id=?",
@@ -175,10 +186,10 @@ mod tests {
                   width INTEGER, height INTEGER, size INTEGER, duration INTEGER, bitrate INTEGER,
                   container TEXT, video_codec TEXT, audio_codec TEXT, color_trc TEXT,
                   display_aspect_ratio REAL, frames_per_second REAL, audio_channels INTEGER,
-                  display_offset INTEGER, media_analysis_version INTEGER, updated_at INTEGER);
+                  display_offset INTEGER, media_analysis_version INTEGER, extra_data TEXT, updated_at INTEGER);
                 INSERT INTO media_items (id, metadata_item_id) VALUES (7, 42);
                 CREATE TABLE media_parts (id INTEGER PRIMARY KEY, media_item_id INTEGER,
-                  size INTEGER, duration INTEGER, updated_at INTEGER);
+                  size INTEGER, duration INTEGER, extra_data TEXT, updated_at INTEGER);
                 INSERT INTO media_parts (id, media_item_id, size, duration) VALUES (70, 7, 35, NULL);
                 CREATE TABLE media_streams (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   stream_type_id INTEGER, media_item_id INTEGER, media_part_id INTEGER,
@@ -206,6 +217,8 @@ mod tests {
             aspect_ratio: 1.7777777910232544,
             fps: 24.0,
             audio_channels: 1,
+            item_extra: r#"{"ma:videoProfile":"high"}"#.into(),
+            part_extra: r#"{"ma:container":"mkv"}"#.into(),
             streams: vec![
                 StreamRow {
                     type_id: 1,
@@ -289,6 +302,14 @@ mod tests {
         assert_eq!(
             value(&db, "SELECT duration FROM metadata_items WHERE id=42"),
             Value::Integer(20023)
+        );
+        assert_eq!(
+            value(&db, "SELECT extra_data FROM media_items WHERE id=7"),
+            Value::Text(r#"{"ma:videoProfile":"high"}"#.into())
+        );
+        assert_eq!(
+            value(&db, "SELECT extra_data FROM media_parts WHERE id=70"),
+            Value::Text(r#"{"ma:container":"mkv"}"#.into())
         );
     }
 
