@@ -209,7 +209,7 @@ pub(super) mod tests {
     }
 
     /// Writes an executable stand-in for ffprobe.
-    fn fake_ffprobe(dir: &tempfile::TempDir, script: &str) -> String {
+    pub(in crate::scanner) fn fake_ffprobe(dir: &tempfile::TempDir, script: &str) -> String {
         let path = dir.path().join("ffprobe");
         std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
