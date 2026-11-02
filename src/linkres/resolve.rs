@@ -1,5 +1,5 @@
 use std::sync::OnceLock;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, LOCATION, RANGE, USER_AGENT};
 use reqwest::redirect::Policy;
@@ -14,6 +14,13 @@ pub const DEFAULT_UA: &str = "PlexAssistant/0.1";
 
 /// Requests per resolution, the first one included (Go's limit).
 const MAX_REQUESTS: usize = 10;
+
+/// A whole resolution, every redirect hop included, must finish within
+/// this: the daemon's clients give up after 30 s, and the daemon has to
+/// answer first so the failure still reaches its breaker and ledger.
+const RESOLVE_TIMEOUT: Duration = Duration::from_secs(25);
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Resolution failure kinds; the scanner maps them to its failure states.
 #[derive(Debug, thiserror::Error)]
@@ -30,6 +37,8 @@ pub enum ResolveError {
     TooManyRedirects,
     #[error("invalid url: {0}")]
     InvalidUrl(#[from] url::ParseError),
+    #[error("upstream timed out after {}s", .0.as_secs_f32())]
+    Timeout(Duration),
     #[error(transparent)]
     Http(#[from] reqwest::Error),
 }
@@ -59,7 +68,10 @@ fn client() -> Result<&'static Client, ResolveError> {
     if let Some(client) = CLIENT.get() {
         return Ok(client);
     }
-    let client = Client::builder().redirect(Policy::none()).build()?;
+    let client = Client::builder()
+        .redirect(Policy::none())
+        .connect_timeout(CONNECT_TIMEOUT)
+        .build()?;
     Ok(CLIENT.get_or_init(|| client))
 }
 
@@ -67,6 +79,16 @@ fn client() -> Result<&'static Client, ResolveError> {
 /// without downloading the media: it probes with a 1-byte range request
 /// and reads only headers.
 pub async fn resolve(raw_url: &str, ua: &str) -> Result<Link, ResolveError> {
+    resolve_within(raw_url, ua, RESOLVE_TIMEOUT).await
+}
+
+async fn resolve_within(raw_url: &str, ua: &str, limit: Duration) -> Result<Link, ResolveError> {
+    tokio::time::timeout(limit, follow(raw_url, ua))
+        .await
+        .map_err(|_| ResolveError::Timeout(limit))?
+}
+
+async fn follow(raw_url: &str, ua: &str) -> Result<Link, ResolveError> {
     let ua = if ua.is_empty() { DEFAULT_UA } else { ua };
     let client = client()?;
 
@@ -321,6 +343,29 @@ mod tests {
         let peers = peers.lock().unwrap();
         assert_eq!(peers.len(), 3);
         assert!(peers.iter().all(|&p| p == peers[0]), "ports {peers:?}");
+    }
+
+    #[tokio::test]
+    async fn stalled_upstream_times_out() {
+        let app = Router::new().route(
+            "/stall",
+            get(|| async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                "late"
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let limit = Duration::from_millis(200);
+        let started = std::time::Instant::now();
+        let err = resolve_within(&format!("{base}/stall"), "", limit)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ResolveError::Timeout(_)), "{err:?}");
+        assert_eq!(err.to_string(), "upstream timed out after 0.2s");
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[tokio::test]
