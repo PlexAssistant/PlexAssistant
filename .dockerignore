@@ -9,7 +9,6 @@ target/
 docs/
 config/
 scripts/
-assistant
 TODO.md
 *.db
 *.db-*
