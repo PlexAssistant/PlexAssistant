@@ -7,9 +7,9 @@ result
 result-*
 .direnv/
 
-# Docs
+# Local docs
 docs/
-*.md
+TODO.md
 
 # Secrets & local config
 .env
