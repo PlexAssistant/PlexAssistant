@@ -1,0 +1,314 @@
+use crate::linkres::Link;
+use crate::plexdb::{Part, StreamRow, WriteSpec};
+
+use super::extra::build_video_extra;
+use super::parse::{atoi64, parse_fps, parse_ratio};
+use super::probe::{ProbeResult, duration_ms};
+
+/// Maps a probe result onto the row shapes the official scanner writes.
+pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
+    let format = &probe.format;
+    let mut spec = WriteSpec {
+        media_item_id: part.media_item_id,
+        part_id: part.id,
+        duration_ms: duration_ms(&format.duration),
+        bitrate: atoi64(&format.bit_rate),
+        container: map_container(&format.format_name),
+        size: match atoi64(&format.size) {
+            0 => link.size,
+            size => size,
+        },
+        ..Default::default()
+    };
+
+    for s in &probe.streams {
+        let mut row = StreamRow {
+            type_id: stream_type_id(&s.codec_type),
+            codec: s.codec_name.clone(),
+            // The official rows never store NULL here and Plex maps stream
+            // languages with ISO 639-2/B three-letter codes (eng, chi,
+            // fre); two-letter codes surface as "Unknown" in the client UI.
+            language: normalize_lang(&s.tags.language),
+            index: s.index,
+            channels: s.channels,
+            bitrate: atoi64(&s.bit_rate),
+            extra_data: String::new(),
+        };
+        match s.codec_type.as_str() {
+            "video" => {
+                if row.bitrate == 0 {
+                    row.bitrate = spec.bitrate;
+                }
+                // the client's displayTitle ("2160p HDR10", ...) is derived
+                // from the ma: fields in extra_data
+                row.extra_data = build_video_extra(s);
+                if spec.video_codec.is_empty() {
+                    spec.video_codec = s.codec_name.clone();
+                    spec.width = s.width;
+                    spec.height = s.height;
+                    spec.aspect_ratio = match parse_ratio(&s.display_aspect_ratio) {
+                        0.0 if s.height > 0 => s.width as f64 / s.height as f64,
+                        ratio => ratio,
+                    };
+                    spec.fps = parse_fps(&s.frame_rate);
+                    spec.color_trc = s.color_transfer.clone();
+                }
+            }
+            "audio" if spec.audio_codec.is_empty() => {
+                spec.audio_codec = s.codec_name.clone();
+                spec.audio_channels = s.channels;
+            }
+            _ => {}
+        }
+        spec.streams.push(row);
+    }
+    spec
+}
+
+fn stream_type_id(codec_type: &str) -> i64 {
+    match codec_type {
+        "video" => 1,
+        "audio" => 2,
+        "subtitle" => 3,
+        _ => 0,
+    }
+}
+
+/// ISO 639-1 codes ffprobe sometimes emits, mapped to the ISO 639-2/B
+/// codes Plex displays ("en" shows as Unknown, "eng" as English).
+const THREE_LETTER: &[(&str, &str)] = &[
+    ("en", "eng"),
+    ("zh", "chi"),
+    ("ja", "jpn"),
+    ("ko", "kor"),
+    ("de", "ger"),
+    ("fr", "fre"),
+    ("es", "spa"),
+    ("pt", "por"),
+    ("ru", "rus"),
+    ("it", "ita"),
+    ("th", "tha"),
+    ("vi", "vie"),
+    ("ar", "ara"),
+    ("nl", "dut"),
+    ("pl", "pol"),
+    ("tr", "tur"),
+    ("sv", "swe"),
+    ("da", "dan"),
+    ("fi", "fin"),
+    ("nb", "nob"),
+    ("cs", "cze"),
+    ("el", "gre"),
+    ("he", "heb"),
+    ("hu", "hun"),
+    ("id", "ind"),
+    ("ms", "may"),
+    ("ro", "rum"),
+    ("uk", "ukr"),
+    ("hi", "hin"),
+    ("fa", "per"),
+];
+
+/// Maps to the three-letter code, defaulting to eng for und/empty like the
+/// official rows.
+fn normalize_lang(lang: &str) -> String {
+    if lang.is_empty() || lang == "und" {
+        return "eng".to_owned();
+    }
+    THREE_LETTER
+        .iter()
+        .find(|(two, _)| *two == lang)
+        .map_or(lang, |(_, three)| three)
+        .to_owned()
+}
+
+const CONTAINER_NAMES: &[(&str, &str)] = &[
+    ("matroska", "mkv"),
+    ("webm", "webm"),
+    ("mov", "mp4"),
+    ("mpegts", "ts"),
+    ("mpeg", "mpeg"),
+    ("avi", "avi"),
+];
+
+/// Picks the first known name of ffprobe's comma-separated format list,
+/// else the first name as-is.
+fn map_container(format_name: &str) -> String {
+    let mut names = format_name.split(',').map(str::trim);
+    names
+        .clone()
+        .find_map(|name| {
+            CONTAINER_NAMES
+                .iter()
+                .find(|(ffprobe, _)| *ffprobe == name)
+                .map(|(_, plex)| *plex)
+        })
+        .or_else(|| names.next())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scanner::probe::parse_probe;
+
+    #[test]
+    fn build() {
+        let part = Part {
+            id: 70,
+            media_item_id: 7,
+            file: "/data/a.strm".into(),
+            size: 35,
+            duration: 0,
+        };
+        let probe = parse_probe(
+            br#"{
+              "streams": [
+                {"index": 0, "codec_name": "h264", "codec_type": "video",
+                 "width": 1280, "height": 720, "bit_rate": "612000",
+                 "avg_frame_rate": "24/1", "display_aspect_ratio": "16:9"},
+                {"index": 1, "codec_name": "aac", "codec_type": "audio",
+                 "channels": 2, "sample_rate": "48000", "bit_rate": "96000",
+                 "tags": {"language": "und"}},
+                {"index": 2, "codec_name": "subrip", "codec_type": "subtitle",
+                 "tags": {"language": "chi"}}
+              ],
+              "format": {
+                "format_name": "matroska,webm", "duration": "20.016000",
+                "size": "3757806", "bit_rate": "1501731"
+              }}"#,
+        )
+        .unwrap();
+        let link = Link {
+            url: "http://x/dl".into(),
+            ..Default::default()
+        };
+
+        let spec = build_spec(&part, &probe, &link);
+        assert_eq!((spec.media_item_id, spec.part_id), (7, 70));
+        assert_eq!(
+            (spec.duration_ms, spec.size, spec.bitrate),
+            (20016, 3757806, 1501731)
+        );
+        assert_eq!(
+            (
+                spec.container.as_str(),
+                spec.video_codec.as_str(),
+                spec.audio_codec.as_str()
+            ),
+            ("mkv", "h264", "aac")
+        );
+        assert_eq!((spec.width, spec.height), (1280, 720));
+        // 16:9 parsed, not the width/height fallback
+        assert!(
+            (1.7777..1.7778).contains(&spec.aspect_ratio),
+            "{}",
+            spec.aspect_ratio
+        );
+        assert_eq!(spec.fps, 24.0);
+        assert_eq!(spec.audio_channels, 2);
+        assert_eq!(
+            spec.streams.iter().map(|s| s.type_id).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(spec.streams[2].language, "chi");
+        // und falls back to a language string, never NULL
+        assert_eq!(spec.streams[1].language, "eng");
+        // a present stream bitrate is kept (fallback only fires when missing)
+        assert_eq!(spec.streams[0].bitrate, 612000);
+        assert!(spec.streams[0].extra_data.contains(r#""ma:width":"1280""#));
+        assert!(spec.streams[1].extra_data.is_empty());
+    }
+
+    #[test]
+    fn fallbacks() {
+        let part = Part {
+            id: 1,
+            media_item_id: 1,
+            file: "/data/a.strm".into(),
+            size: 0,
+            duration: 0,
+        };
+        let probe = parse_probe(
+            br#"{
+              "streams": [
+                {"index": 0, "codec_name": "hevc", "codec_type": "video",
+                 "width": 3840, "height": 2160, "avg_frame_rate": "24000/1001"}
+              ],
+              "format": {"format_name": "mpegts", "duration": "10.0"}}"#,
+        )
+        .unwrap();
+        let link = Link {
+            url: "x".into(),
+            size: 12345,
+            ..Default::default()
+        };
+        // no format size/bitrate: fall back to the resolved link size
+        let spec = build_spec(&part, &probe, &link);
+        assert_eq!(spec.size, 12345);
+        assert_eq!(spec.bitrate, 0);
+        assert_eq!(spec.streams[0].bitrate, 0);
+        assert_eq!(spec.container, "ts");
+        // no display_aspect_ratio: width/height fallback
+        assert!(
+            (1.777..1.778).contains(&spec.aspect_ratio),
+            "{}",
+            spec.aspect_ratio
+        );
+        assert_eq!((spec.fps * 1000.0) as i64, 23976);
+    }
+
+    #[test]
+    fn first_video_and_audio_win() {
+        let probe = parse_probe(
+            br#"{"streams": [
+                {"index": 0, "codec_name": "h264", "codec_type": "video", "width": 1920, "height": 1080},
+                {"index": 1, "codec_name": "mjpeg", "codec_type": "video", "width": 320, "height": 240},
+                {"index": 2, "codec_name": "eac3", "codec_type": "audio", "channels": 6},
+                {"index": 3, "codec_name": "aac", "codec_type": "audio", "channels": 2}
+              ]}"#,
+        )
+        .unwrap();
+        let part = Part {
+            id: 1,
+            media_item_id: 1,
+            file: String::new(),
+            size: 0,
+            duration: 0,
+        };
+        let spec = build_spec(&part, &probe, &Link::default());
+        assert_eq!((spec.video_codec.as_str(), spec.width), ("h264", 1920));
+        assert_eq!(
+            (spec.audio_codec.as_str(), spec.audio_channels),
+            ("eac3", 6)
+        );
+        assert_eq!(spec.streams.len(), 4);
+    }
+
+    #[test]
+    fn containers() {
+        assert_eq!(map_container("mov,mp4,m4a,3gp,3g2,mj2"), "mp4");
+        assert_eq!(map_container("matroska,webm"), "mkv");
+        assert_eq!(map_container("flv"), "flv");
+        assert_eq!(map_container(" ogg , x"), "ogg");
+        assert_eq!(map_container(""), "");
+    }
+
+    #[test]
+    fn languages() {
+        for (input, want) in [
+            ("", "eng"),
+            ("und", "eng"),
+            ("en", "eng"),
+            ("zh", "chi"),
+            ("nl", "dut"),
+            ("eng", "eng"),
+            ("chi", "chi"),
+            ("fre", "fre"),
+            ("xx", "xx"), // unknown passthrough
+        ] {
+            assert_eq!(normalize_lang(input), want, "{input:?}");
+        }
+    }
+}
