@@ -129,6 +129,7 @@ fn matches_plex_analysis() {
         let item = &f.item;
         d.int("item.width", spec.width, &item["width"]);
         d.int("item.height", spec.height, &item["height"]);
+        d.int("item.duration", spec.duration_ms, &item["duration"]);
         d.int("item.bitrate", spec.bitrate, &item["bitrate"]);
         d.text("item.video_codec", &spec.video_codec, &item["video_codec"]);
         d.float(
@@ -143,6 +144,7 @@ fn matches_plex_analysis() {
         );
         d.text("item.color_trc", &spec.color_trc, &item["color_trc"]);
         d.int("part.size", spec.size, &f.part["size"]);
+        d.int("part.duration", spec.duration_ms, &f.part["duration"]);
 
         // pair rows by ffprobe index; Plex skips data tracks entirely
         for plex in &f.streams {
