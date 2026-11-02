@@ -41,7 +41,11 @@ async fn main() -> ExitCode {
     );
     let app = cloud::Server::new(&args.secret, args.root, args.ttl).router();
     let served = match tokio::net::TcpListener::bind(&addr).await {
-        Ok(listener) => axum::serve(listener, app).await,
+        Ok(listener) => {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+        }
         Err(e) => Err(e),
     };
     match served {
@@ -50,5 +54,19 @@ async fn main() -> ExitCode {
             eprintln!("fakecloud: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Resolves on SIGTERM or SIGINT. As a container's PID 1 the process gets
+/// no default signal handling, so `docker stop` would otherwise wait out
+/// its timeout and SIGKILL us.
+async fn shutdown_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut term = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+    let mut int = signal(SignalKind::interrupt()).expect("install SIGINT handler");
+    tokio::select! {
+        _ = term.recv() => {}
+        _ = int.recv() => {}
     }
 }
