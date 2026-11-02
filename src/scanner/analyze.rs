@@ -289,7 +289,12 @@ mod tests {
             runtime_sock: None,
         };
 
-        assert_eq!(analyze_item(&mut db, 42, &opts, &mut Default::default()).await.unwrap(), 1);
+        assert_eq!(
+            analyze_item(&mut db, 42, &opts, &mut Default::default())
+                .await
+                .unwrap(),
+            1
+        );
         assert_eq!(written_items(dir.path()), [(100, "h264".into())]);
     }
 
@@ -328,7 +333,12 @@ mod tests {
             runtime_sock: Some(sock),
         };
 
-        assert_eq!(analyze_item(&mut db, 42, &opts, &mut Default::default()).await.unwrap(), 1);
+        assert_eq!(
+            analyze_item(&mut db, 42, &opts, &mut Default::default())
+                .await
+                .unwrap(),
+            1
+        );
         assert_eq!(
             std::fs::read_to_string(probed_url).unwrap().trim(),
             "http://cached/dl/ep1"
@@ -346,7 +356,12 @@ mod tests {
             ffprobe: fake_ffprobe(&dir, "echo boom >&2; exit 1"),
             ..Default::default()
         };
-        assert_eq!(analyze_item(&mut db, 42, &opts, &mut Default::default()).await.unwrap(), 0);
+        assert_eq!(
+            analyze_item(&mut db, 42, &opts, &mut Default::default())
+                .await
+                .unwrap(),
+            0
+        );
         assert!(written_items(dir.path()).is_empty());
     }
 
@@ -359,7 +374,10 @@ mod tests {
             .route(
                 "/file/{id}",
                 get(|UrlPath(id): UrlPath<String>| async move {
-                    (StatusCode::FOUND, [(header::LOCATION, format!("/dl/fresh-{id}"))])
+                    (
+                        StatusCode::FOUND,
+                        [(header::LOCATION, format!("/dl/fresh-{id}"))],
+                    )
                 }),
             )
             .route(
@@ -413,7 +431,12 @@ mod tests {
             ..Default::default()
         };
         let mut refreshed = HashSet::new();
-        assert_eq!(analyze_item(&mut db, 42, &opts, &mut refreshed).await.unwrap(), 2);
+        assert_eq!(
+            analyze_item(&mut db, 42, &opts, &mut refreshed)
+                .await
+                .unwrap(),
+            2
+        );
         assert_eq!(refreshed.len(), 1, "one refresh per target");
         assert_eq!(written_items(dir.path()).len(), 2);
     }
@@ -433,7 +456,9 @@ mod tests {
             ffprobe: fake_ffprobe(&dir, &format!("cat <<'JSON'\n{SAMPLE_PROBE_JSON}\nJSON")),
             ..Default::default()
         };
-        let err = analyze_item(&mut db, 42, &opts, &mut Default::default()).await.unwrap_err();
+        let err = analyze_item(&mut db, 42, &opts, &mut Default::default())
+            .await
+            .unwrap_err();
         assert_eq!(
             err.to_string(),
             "item 42 part 1000: write: schema \"9\" not on the write whitelist"
