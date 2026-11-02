@@ -1,10 +1,6 @@
-# Go
-/assistant
-/bin/
-/dist/
-
-# Rust
+# Build output
 /target/
+/dist/
 
 # Nix / direnv
 result
