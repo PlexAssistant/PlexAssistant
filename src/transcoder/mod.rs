@@ -3,5 +3,7 @@
 //! re-resolves the gateway URL nor bypasses the cache.
 
 mod rewrite;
+mod run;
 
 pub use rewrite::{DaemonResolver, Resolver, Swap, rewrite_args};
+pub use run::run;
