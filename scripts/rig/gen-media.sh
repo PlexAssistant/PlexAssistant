@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Generate test media (ffmpeg) and .strm samples pointing at fakecloud.
+# Generate test media (ffmpeg) and .strm samples pointing at strmock.
 # Usage: gen-media.sh [base-url] [out-dir]
 set -euo pipefail
 
-BASE="${1:-http://fakecloud:8399}"
+BASE="${1:-http://strmock:8399}"
 OUT="${2:-testdata}"
 MEDIA="$OUT/media"
 STRM="$OUT/strm"

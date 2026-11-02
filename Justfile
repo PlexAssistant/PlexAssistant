@@ -26,10 +26,10 @@ image:
         --build-arg CREATED=`date -u +%Y-%m-%dT%H:%M:%SZ` \
         -t plexassistant:dev .
 
-gen-media base="http://fakecloud:8399" out="testdata":
+gen-media base="http://strmock:8399" out="testdata":
     ./scripts/rig/gen-media.sh {{base}} {{out}}
 
-gen-bulk base="http://fakecloud:8399" out="testdata":
+gen-bulk base="http://strmock:8399" out="testdata":
     ./scripts/rig/gen-bulk-strm.sh {{base}} {{out}}
 
 rig-up: build-linux

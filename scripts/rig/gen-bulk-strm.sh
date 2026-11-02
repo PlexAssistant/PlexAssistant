@@ -5,7 +5,7 @@
 # Usage: gen-bulk-strm.sh [base-url] [out-dir]
 set -euo pipefail
 
-BASE="${1:-http://fakecloud:8399}"
+BASE="${1:-http://strmock:8399}"
 OUT="${2:-testdata}"
 
 STRM="$OUT/strm"
