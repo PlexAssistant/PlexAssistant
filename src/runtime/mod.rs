@@ -3,5 +3,6 @@
 //! timestamps are stored for information only.
 
 mod cache;
+mod ledger;
 
 pub use cache::{Cache, Entry, OpenError, Stats};
