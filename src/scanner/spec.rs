@@ -1,7 +1,7 @@
 use crate::linkres::Link;
 use crate::plexdb::{Part, StreamRow, WriteSpec};
 
-use super::extra::build_video_extra;
+use super::extra::video_extra;
 use super::lang::normalize_lang;
 use super::parse::{atoi64, parse_fps, parse_ratio};
 use super::probe::{ProbeResult, duration_ms};
@@ -44,7 +44,7 @@ pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
         if type_id == 1 {
             // the client's displayTitle ("2160p HDR10", ...) is derived
             // from the ma: fields in extra_data
-            row.extra_data = build_video_extra(s);
+            row.extra_data = video_extra(s, &spec.container).encode();
             if spec.video_codec.is_empty() {
                 spec.video_codec = row.codec.clone();
                 spec.width = s.width;
