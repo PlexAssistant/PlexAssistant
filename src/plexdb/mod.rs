@@ -7,6 +7,10 @@ use std::time::Duration;
 
 use rusqlite::{Connection, Result};
 
+mod write;
+
+pub use write::{StreamRow, WriteError, WriteSpec};
+
 /// The library database inside the Plex container.
 pub const DEFAULT_PATH: &str = "/config/Library/Application Support/Plex Media Server/Plug-in Support/Databases/com.plexapp.plugins.library.db";
 
