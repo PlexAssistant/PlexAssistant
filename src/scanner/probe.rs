@@ -22,7 +22,7 @@ pub enum ProbeError {
 /// Mirrors the measured parameter line: bounded probe size so a stray huge
 /// file cannot stall analysis, and an explicit protocol whitelist for
 /// remote inputs.
-fn probe_args<'a>(url: &'a str, ua: &'a str) -> [&'a str; 13] {
+fn probe_args<'a>(url: &'a str, ua: &'a str) -> [&'a str; 14] {
     [
         "-v",
         "error",
@@ -34,6 +34,7 @@ fn probe_args<'a>(url: &'a str, ua: &'a str) -> [&'a str; 13] {
         ua,
         "-show_format",
         "-show_streams",
+        "-show_chapters",
         "-of",
         "json",
         url,
@@ -75,6 +76,23 @@ pub(super) fn parse_probe(out: &[u8]) -> Result<ProbeResult, ProbeError> {
 pub struct ProbeResult {
     pub format: Format,
     pub streams: Vec<Stream>,
+    pub chapters: Vec<Chapter>,
+}
+
+/// One ffprobe chapter entry.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct Chapter {
+    /// seconds, e.g. "1.500000"
+    pub start_time: String,
+    pub end_time: String,
+    pub tags: ChapterTags,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct ChapterTags {
+    pub title: String,
 }
 
 /// ffprobe's format section.

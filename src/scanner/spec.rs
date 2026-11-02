@@ -1,7 +1,7 @@
 use crate::linkres::Link;
 use crate::plexdb::{Part, StreamRow, WriteSpec};
 
-use super::extra::{audio_extra, subtitle_extra, video_extra};
+use super::extra::{audio_extra, item_extra, part_extra, subtitle_extra, video_extra};
 use super::lang::normalize_lang;
 use super::parse::{atoi64, parse_fps, parse_ratio};
 use super::probe::{ProbeResult, duration_ms};
@@ -66,15 +66,19 @@ pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
 
     // the item's audio is the stream with the most channels, the first on
     // a tie: Plex picks 5.1 AC3 over a default stereo AAC
-    if let Some(main) = spec
+    let main_audio = probe
         .streams
         .iter()
-        .filter(|r| r.type_id == 2)
-        .reduce(|best, r| if r.channels > best.channels { r } else { best })
-    {
-        spec.audio_codec = main.codec.clone();
+        .filter(|s| s.codec_type == "audio")
+        .reduce(|best, s| if s.channels > best.channels { s } else { best });
+    if let Some(main) = main_audio {
+        spec.audio_codec = plex_codec(&main.codec_name);
         spec.audio_channels = main.channels;
     }
+    let video = probe.streams.iter().find(|s| s.codec_type == "video");
+    let item = item_extra(video, main_audio, &spec.container, spec.size);
+    spec.part_extra = part_extra(&item, &spec.container, &probe.chapters).encode();
+    spec.item_extra = item.encode();
     // a video stream without its own bitrate gets what the container's
     // leaves after the other streams' known bitrates
     let others: i64 = spec

@@ -6,8 +6,10 @@
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-use super::parse::parse_fps;
-use super::probe::Stream;
+use serde::Serialize;
+
+use super::parse::{atof, parse_fps};
+use super::probe::{Chapter, Stream};
 
 /// One extra_data object under construction; empty values are left out.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -101,11 +103,7 @@ pub(super) fn audio_extra(s: &Stream, container: &str) -> Extra {
     // lossless codecs only; lossy ones report none
     let depth = s.bit_depth.parse().map_or_else(|_| String::new(), positive);
     e.set("ma:bitDepth", depth);
-    match s.codec_name.as_str() {
-        "dts" => e.set("ma:profile", plex_profile(&s.profile)),
-        pcm if pcm.starts_with("pcm_") => e.set("ma:profile", pcm),
-        _ => {}
-    }
+    e.set("ma:profile", audio_profile(s));
     e.set("ma:samplingRate", known(&s.sample_rate));
     e.set("ma:streamIdentifier", stream_identifier(s, container));
     e
@@ -116,6 +114,93 @@ pub(super) fn subtitle_extra(s: &Stream, container: &str) -> Extra {
     let mut e = Extra::default();
     e.set("ma:streamIdentifier", stream_identifier(s, container));
     e
+}
+
+/// The media_items fields: the first video stream's profile, the item
+/// audio stream's profile (see audio_extra) and, for MP4/MOV, whether
+/// chunk offsets are 64-bit.
+pub(super) fn item_extra(
+    video: Option<&Stream>,
+    audio: Option<&Stream>,
+    container: &str,
+    size: i64,
+) -> Extra {
+    let mut e = Extra::default();
+    if let Some(audio) = audio {
+        e.set("ma:audioProfile", audio_profile(audio));
+    }
+    if matches!(container, "mp4" | "mov") {
+        // ffprobe does not show co64 boxes; muxers switch to them only
+        // once offsets pass 4 GiB
+        e.set(
+            "ma:has64bitOffsets",
+            if size > i64::from(u32::MAX) { "1" } else { "0" },
+        );
+    }
+    if let Some(video) = video {
+        e.set("ma:videoProfile", plex_profile(&video.profile));
+    }
+    e
+}
+
+/// The media_parts fields: the item's plus the container, the MPEG-TS
+/// packet length and the chapter list. Plex's ma:optimizedForStreaming is
+/// left out: nothing ffprobe reports predicts it.
+pub(super) fn part_extra(item: &Extra, container: &str, chapters: &[Chapter]) -> Extra {
+    let mut e = item.clone();
+    e.set("ma:container", container);
+    // Plex reports 188 for m2ts as well
+    if container == "mpegts" {
+        e.set("ma:packetLength", "188");
+    }
+    e.set("pv:chapters", chapters_json(chapters));
+    e
+}
+
+#[derive(Serialize)]
+struct ChapterList<'a> {
+    #[serde(rename = "Chapters")]
+    chapters: ChapterSet<'a>,
+}
+
+#[derive(Serialize)]
+struct ChapterSet<'a> {
+    #[serde(rename = "Chapter", skip_serializing_if = "Vec::is_empty")]
+    chapter: Vec<ChapterEntry<'a>>,
+}
+
+/// Field order matters: Plex writes name, start, end.
+#[derive(Serialize)]
+struct ChapterEntry<'a> {
+    name: &'a str,
+    start: f64,
+    end: f64,
+}
+
+/// {"Chapters":{"Chapter":[{"name":..,"start":0.0,"end":1.5}]}} in
+/// seconds, or {"Chapters":{}} without chapters.
+fn chapters_json(chapters: &[Chapter]) -> String {
+    let list = ChapterList {
+        chapters: ChapterSet {
+            chapter: chapters
+                .iter()
+                .map(|c| ChapterEntry {
+                    name: &c.tags.title,
+                    start: atof(&c.start_time),
+                    end: atof(&c.end_time),
+                })
+                .collect(),
+        },
+    };
+    serde_json::to_string(&list).expect("chapters always serialize")
+}
+
+fn audio_profile(s: &Stream) -> String {
+    match s.codec_name.as_str() {
+        "dts" => plex_profile(&s.profile),
+        pcm if pcm.starts_with("pcm_") => pcm.to_owned(),
+        _ => String::new(),
+    }
 }
 
 /// The container-level id of a stream: ffprobe's hex id in decimal (MP4
@@ -328,6 +413,25 @@ mod tests {
         assert!(!dts.0.contains_key("ma:bitDepth"));
         let pcm = audio_extra(&stream("pcm_s24le", "mono", "24", ""), "mov");
         assert_eq!(pcm.0["ma:profile"], "pcm_s24le");
+    }
+
+    #[test]
+    fn chapter_list() {
+        let chapter = |title: &str, start: &str, end: &str| Chapter {
+            start_time: start.into(),
+            end_time: end.into(),
+            tags: super::super::probe::ChapterTags {
+                title: title.into(),
+            },
+        };
+        assert_eq!(chapters_json(&[]), r#"{"Chapters":{}}"#);
+        assert_eq!(
+            chapters_json(&[
+                chapter("Opening", "0.000000", "1.500000"),
+                chapter("Main Part", "1.500000", "4.000000")
+            ]),
+            r#"{"Chapters":{"Chapter":[{"name":"Opening","start":0.0,"end":1.5},{"name":"Main Part","start":1.5,"end":4.0}]}}"#
+        );
     }
 
     #[test]
