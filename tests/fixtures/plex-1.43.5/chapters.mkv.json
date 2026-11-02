@@ -1,0 +1,194 @@
+{
+  "file": "chapters.mkv",
+  "plex": "1.43.5.11079-b3b13e506",
+  "ffprobe": {
+    "streams": [
+      {
+        "index": 0,
+        "codec_name": "h264",
+        "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+        "profile": "Constrained Baseline",
+        "codec_type": "video",
+        "codec_tag_string": "[0][0][0][0]",
+        "codec_tag": "0x0000",
+        "width": 1280,
+        "height": 720,
+        "coded_width": 1280,
+        "coded_height": 720,
+        "has_b_frames": 0,
+        "sample_aspect_ratio": "1:1",
+        "display_aspect_ratio": "16:9",
+        "pix_fmt": "yuv420p",
+        "level": 31,
+        "color_range": "tv",
+        "chroma_location": "left",
+        "field_order": "progressive",
+        "refs": 1,
+        "is_avc": "true",
+        "nal_length_size": "4",
+        "r_frame_rate": "24/1",
+        "avg_frame_rate": "24/1",
+        "time_base": "1/1000",
+        "start_pts": 0,
+        "start_time": "0.000000",
+        "bits_per_raw_sample": "8",
+        "extradata_size": 38,
+        "disposition": {
+          "default": 0,
+          "dub": 0,
+          "original": 0,
+          "comment": 0,
+          "lyrics": 0,
+          "karaoke": 0,
+          "forced": 0,
+          "hearing_impaired": 0,
+          "visual_impaired": 0,
+          "clean_effects": 0,
+          "attached_pic": 0,
+          "timed_thumbnails": 0,
+          "non_diegetic": 0,
+          "captions": 0,
+          "descriptions": 0,
+          "metadata": 0,
+          "dependent": 0,
+          "still_image": 0,
+          "multilayer": 0
+        },
+        "tags": {
+          "ENCODER": "Lavc62.28.102 libx264",
+          "DURATION": "00:00:04.000000000"
+        }
+      },
+      {
+        "index": 1,
+        "codec_name": "aac",
+        "codec_long_name": "AAC (Advanced Audio Coding)",
+        "profile": "LC",
+        "codec_type": "audio",
+        "codec_tag_string": "[0][0][0][0]",
+        "codec_tag": "0x0000",
+        "sample_fmt": "fltp",
+        "sample_rate": "44100",
+        "channels": 1,
+        "channel_layout": "mono",
+        "bits_per_sample": 0,
+        "initial_padding": 1024,
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0",
+        "time_base": "1/1000",
+        "start_pts": -23,
+        "start_time": "-0.023000",
+        "extradata_size": 5,
+        "disposition": {
+          "default": 0,
+          "dub": 0,
+          "original": 0,
+          "comment": 0,
+          "lyrics": 0,
+          "karaoke": 0,
+          "forced": 0,
+          "hearing_impaired": 0,
+          "visual_impaired": 0,
+          "clean_effects": 0,
+          "attached_pic": 0,
+          "timed_thumbnails": 0,
+          "non_diegetic": 0,
+          "captions": 0,
+          "descriptions": 0,
+          "metadata": 0,
+          "dependent": 0,
+          "still_image": 0,
+          "multilayer": 0
+        },
+        "tags": {
+          "ENCODER": "Lavc62.28.102 aac",
+          "DURATION": "00:00:04.023000000"
+        }
+      }
+    ],
+    "chapters": [
+      {
+        "id": 1,
+        "time_base": "1/1000000000",
+        "start": 0,
+        "start_time": "0.000000",
+        "end": 1500000000,
+        "end_time": "1.500000",
+        "tags": {
+          "title": "Opening"
+        }
+      },
+      {
+        "id": 2,
+        "time_base": "1/1000000000",
+        "start": 1500000000,
+        "start_time": "1.500000",
+        "end": 4000000000,
+        "end_time": "4.000000",
+        "tags": {
+          "title": "Main Part"
+        }
+      }
+    ],
+    "format": {
+      "nb_streams": 2,
+      "nb_programs": 0,
+      "nb_stream_groups": 0,
+      "format_name": "matroska,webm",
+      "format_long_name": "Matroska / WebM",
+      "start_time": "-0.023000",
+      "duration": "4.023000",
+      "size": "3252703",
+      "bit_rate": "6468213",
+      "probe_score": 100,
+      "tags": {
+        "ENCODER": "Lavf62.12.102"
+      }
+    }
+  },
+  "media_item": {
+    "container": "mkv",
+    "width": 1280,
+    "height": 720,
+    "duration": 4023,
+    "bitrate": 6468213,
+    "video_codec": "h264",
+    "audio_codec": "aac",
+    "display_aspect_ratio": 1.7777777910232544,
+    "frames_per_second": 24.0,
+    "audio_channels": 1,
+    "color_trc": "",
+    "extra_data": "{\"ma:videoProfile\":\"constrained baseline\",\"url\":\"ma%3AvideoProfile=constrained%20baseline\"}"
+  },
+  "media_part": {
+    "size": 3252703,
+    "duration": 4023,
+    "extra_data": "{\"ma:container\":\"mkv\",\"ma:videoProfile\":\"constrained baseline\",\"pv:chapters\":\"{\\\"Chapters\\\":{\\\"Chapter\\\":[{\\\"name\\\":\\\"Opening\\\",\\\"start\\\":0.0,\\\"end\\\":1.5},{\\\"name\\\":\\\"Main Part\\\",\\\"start\\\":1.5,\\\"end\\\":4.0}]}}\",\"url\":\"ma%3Acontainer=mkv&ma%3AvideoProfile=constrained%20baseline&pv%3Achapters=%7B%22Chapters%22%3A%7B%22Chapter%22%3A%5B%7B%22name%22%3A%22Opening%22%2C%22start%22%3A0%2E0%2C%22end%22%3A1%2E5%7D%2C%7B%22name%22%3A%22Main%20Part%22%2C%22start%22%3A1%2E5%2C%22end%22%3A4%2E0%7D%5D%7D%7D\"}"
+  },
+  "streams": [
+    {
+      "stream_type_id": 1,
+      "index": 0,
+      "codec": "h264",
+      "language": "en",
+      "channels": null,
+      "bitrate": 6468213,
+      "default": 0,
+      "forced": 0,
+      "url": "",
+      "extra_data": "{\"ma:bitDepth\":\"8\",\"ma:chromaLocation\":\"left\",\"ma:chromaSubsampling\":\"4:2:0\",\"ma:codedHeight\":\"720\",\"ma:codedWidth\":\"1280\",\"ma:colorRange\":\"tv\",\"ma:frameRate\":\"24.000\",\"ma:hasScalingMatrix\":\"0\",\"ma:height\":\"720\",\"ma:level\":\"31\",\"ma:profile\":\"constrained baseline\",\"ma:refFrames\":\"1\",\"ma:scanType\":\"progressive\",\"ma:width\":\"1280\",\"url\":\"ma%3AbitDepth=8&ma%3AchromaLocation=left&ma%3AchromaSubsampling=4%3A2%3A0&ma%3AcodedHeight=720&ma%3AcodedWidth=1280&ma%3AcolorRange=tv&ma%3AframeRate=24%2E000&ma%3AhasScalingMatrix=0&ma%3Aheight=720&ma%3Alevel=31&ma%3Aprofile=constrained%20baseline&ma%3ArefFrames=1&ma%3AscanType=progressive&ma%3Awidth=1280\"}"
+    },
+    {
+      "stream_type_id": 2,
+      "index": 1,
+      "codec": "aac",
+      "language": "en",
+      "channels": 1,
+      "bitrate": null,
+      "default": 0,
+      "forced": 0,
+      "url": "",
+      "extra_data": "{\"ma:samplingRate\":\"44100\",\"url\":\"ma%3AsamplingRate=44100\"}"
+    }
+  ]
+}
