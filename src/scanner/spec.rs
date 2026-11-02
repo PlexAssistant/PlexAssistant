@@ -37,35 +37,55 @@ pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
             index: s.index,
             channels: s.channels,
             bitrate: atoi64(&s.bit_rate),
+            default: s.disposition.default != 0,
+            forced: s.disposition.forced != 0,
             extra_data: String::new(),
         };
-        match s.codec_type.as_str() {
-            "video" => {
-                if row.bitrate == 0 {
-                    row.bitrate = spec.bitrate;
-                }
-                // the client's displayTitle ("2160p HDR10", ...) is derived
-                // from the ma: fields in extra_data
-                row.extra_data = build_video_extra(s);
-                if spec.video_codec.is_empty() {
-                    spec.video_codec = row.codec.clone();
-                    spec.width = s.width;
-                    spec.height = s.height;
-                    spec.aspect_ratio = match parse_ratio(&s.display_aspect_ratio) {
-                        0.0 if s.height > 0 => s.width as f64 / s.height as f64,
-                        ratio => ratio,
-                    };
-                    spec.fps = parse_fps(&s.frame_rate);
-                    spec.color_trc = s.color_transfer.clone();
-                }
+        if type_id == 1 {
+            // the client's displayTitle ("2160p HDR10", ...) is derived
+            // from the ma: fields in extra_data
+            row.extra_data = build_video_extra(s);
+            if spec.video_codec.is_empty() {
+                spec.video_codec = row.codec.clone();
+                spec.width = s.width;
+                spec.height = s.height;
+                spec.aspect_ratio = match parse_ratio(&s.display_aspect_ratio) {
+                    0.0 if s.height > 0 => s.width as f64 / s.height as f64,
+                    ratio => ratio,
+                };
+                spec.fps = parse_fps(&s.frame_rate);
+                spec.color_trc = s.color_transfer.clone();
             }
-            "audio" if spec.audio_codec.is_empty() => {
-                spec.audio_codec = row.codec.clone();
-                spec.audio_channels = s.channels;
-            }
-            _ => {}
         }
         spec.streams.push(row);
+    }
+
+    // the item's audio is the stream with the most channels, the first on
+    // a tie: Plex picks 5.1 AC3 over a default stereo AAC
+    if let Some(main) = spec
+        .streams
+        .iter()
+        .filter(|r| r.type_id == 2)
+        .reduce(|best, r| if r.channels > best.channels { r } else { best })
+    {
+        spec.audio_codec = main.codec.clone();
+        spec.audio_channels = main.channels;
+    }
+    // a video stream without its own bitrate gets what the container's
+    // leaves after the other streams' known bitrates
+    let others: i64 = spec
+        .streams
+        .iter()
+        .filter(|r| r.type_id != 1)
+        .map(|r| r.bitrate)
+        .sum();
+    let rest = (spec.bitrate - others).max(0);
+    for row in spec
+        .streams
+        .iter_mut()
+        .filter(|r| r.type_id == 1 && r.bitrate == 0)
+    {
+        row.bitrate = rest;
     }
     spec
 }
