@@ -22,8 +22,14 @@ pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
     };
 
     for s in &probe.streams {
+        // data tracks (MP4 chapter text) and attachments (MKV fonts) are
+        // not media streams; Plex stores no row for them
+        let type_id = stream_type_id(&s.codec_type);
+        if type_id == 0 {
+            continue;
+        }
         let mut row = StreamRow {
-            type_id: stream_type_id(&s.codec_type),
+            type_id,
             codec: s.codec_name.clone(),
             // The official rows never store NULL here and Plex maps stream
             // languages with ISO 639-2/B three-letter codes (eng, chi,
@@ -284,6 +290,31 @@ mod tests {
             ("eac3", 6)
         );
         assert_eq!(spec.streams.len(), 4);
+    }
+
+    #[test]
+    fn skips_data_and_attachment_streams() {
+        let probe = parse_probe(
+            br#"{"streams": [
+                {"index": 0, "codec_name": "h264", "codec_type": "video"},
+                {"index": 1, "codec_name": "bin_data", "codec_type": "data"},
+                {"index": 2, "codec_name": "ttf", "codec_type": "attachment"},
+                {"index": 3, "codec_name": "aac", "codec_type": "audio"}
+              ]}"#,
+        )
+        .unwrap();
+        let part = Part {
+            id: 1,
+            media_item_id: 1,
+            file: String::new(),
+            size: 0,
+            duration: 0,
+        };
+        let spec = build_spec(&part, &probe, &Link::default());
+        assert_eq!(
+            spec.streams.iter().map(|s| s.index).collect::<Vec<_>>(),
+            [0, 3]
+        );
     }
 
     #[test]
