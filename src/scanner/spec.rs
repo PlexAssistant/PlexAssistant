@@ -15,7 +15,7 @@ pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
         part_id: part.id,
         duration_ms: duration_ms(&format.duration),
         bitrate: atoi64(&format.bit_rate),
-        container: map_container(&format.format_name),
+        container: map_container(&format.format_name, &format.tags.major_brand),
         size: match atoi64(&format.size) {
             0 => link.size,
             size => size,
@@ -32,7 +32,7 @@ pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
         }
         let mut row = StreamRow {
             type_id,
-            codec: s.codec_name.clone(),
+            codec: plex_codec(&s.codec_name),
             language: normalize_lang(&s.tags.language, matroska),
             index: s.index,
             channels: s.channels,
@@ -48,7 +48,7 @@ pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
                 // from the ma: fields in extra_data
                 row.extra_data = build_video_extra(s);
                 if spec.video_codec.is_empty() {
-                    spec.video_codec = s.codec_name.clone();
+                    spec.video_codec = row.codec.clone();
                     spec.width = s.width;
                     spec.height = s.height;
                     spec.aspect_ratio = match parse_ratio(&s.display_aspect_ratio) {
@@ -60,7 +60,7 @@ pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
                 }
             }
             "audio" if spec.audio_codec.is_empty() => {
-                spec.audio_codec = s.codec_name.clone();
+                spec.audio_codec = row.codec.clone();
                 spec.audio_channels = s.channels;
             }
             _ => {}
@@ -79,30 +79,34 @@ fn stream_type_id(codec_type: &str) -> i64 {
     }
 }
 
-const CONTAINER_NAMES: &[(&str, &str)] = &[
-    ("matroska", "mkv"),
-    ("webm", "webm"),
-    ("mov", "mp4"),
-    ("mpegts", "ts"),
-    ("mpeg", "mpeg"),
-    ("avi", "avi"),
-];
+/// Plex's name for ffprobe's container, as measured in
+/// tests/fixtures/plex-1.43.5.11079: Matroska and WebM are "mkv", the
+/// ISO BMFF family is "mov" for QuickTime brands and "mp4" otherwise
+/// (m4v included), and everything else keeps ffprobe's first name
+/// ("mpegts" also for m2ts, "mpeg", "avi", "asf", "flv", "ogg").
+fn map_container(format_name: &str, major_brand: &str) -> String {
+    let first = format_name.split(',').next().unwrap_or_default().trim();
+    match first {
+        "matroska" | "webm" => "mkv",
+        "mov" if major_brand.trim() == "qt" => "mov",
+        "mov" => "mp4",
+        other => other,
+    }
+    .to_owned()
+}
 
-/// Picks the first known name of ffprobe's comma-separated format list,
-/// else the first name as-is.
-fn map_container(format_name: &str) -> String {
-    let mut names = format_name.split(',').map(str::trim);
-    names
-        .clone()
-        .find_map(|name| {
-            CONTAINER_NAMES
-                .iter()
-                .find(|(ffprobe, _)| *ffprobe == name)
-                .map(|(_, plex)| *plex)
-        })
-        .or_else(|| names.next())
-        .unwrap_or_default()
-        .to_owned()
+/// Plex's name for ffprobe's codec where they differ; measured in
+/// tests/fixtures/plex-1.43.5.11079.
+fn plex_codec(codec_name: &str) -> String {
+    match codec_name {
+        "subrip" => "srt",
+        "dts" => "dca",
+        "hdmv_pgs_subtitle" => "pgs",
+        "dvd_subtitle" => "vobsub",
+        pcm if pcm.starts_with("pcm_") => "pcm",
+        other => other,
+    }
+    .to_owned()
 }
 
 #[cfg(test)]
@@ -206,7 +210,7 @@ mod tests {
         assert_eq!(spec.size, 12345);
         assert_eq!(spec.bitrate, 0);
         assert_eq!(spec.streams[0].bitrate, 0);
-        assert_eq!(spec.container, "ts");
+        assert_eq!(spec.container, "mpegts");
         // no display_aspect_ratio: width/height fallback
         assert!(
             (1.777..1.778).contains(&spec.aspect_ratio),
@@ -270,10 +274,37 @@ mod tests {
 
     #[test]
     fn containers() {
-        assert_eq!(map_container("mov,mp4,m4a,3gp,3g2,mj2"), "mp4");
-        assert_eq!(map_container("matroska,webm"), "mkv");
-        assert_eq!(map_container("flv"), "flv");
-        assert_eq!(map_container(" ogg , x"), "ogg");
-        assert_eq!(map_container(""), "");
+        for (format, brand, want) in [
+            ("matroska,webm", "", "mkv"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "qt  ", "mov"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "isom", "mp4"),
+            ("mov,mp4,m4a,3gp,3g2,mj2", "M4V ", "mp4"),
+            ("mpegts", "", "mpegts"),
+            ("mpeg", "", "mpeg"),
+            ("avi", "", "avi"),
+            ("asf", "", "asf"),
+            ("flv", "", "flv"),
+            ("ogg", "", "ogg"),
+            ("", "", ""),
+        ] {
+            assert_eq!(map_container(format, brand), want, "{format} {brand:?}");
+        }
+    }
+
+    #[test]
+    fn codecs() {
+        for (ffprobe, want) in [
+            ("subrip", "srt"),
+            ("dts", "dca"),
+            ("hdmv_pgs_subtitle", "pgs"),
+            ("dvd_subtitle", "vobsub"),
+            ("pcm_s24le", "pcm"),
+            ("pcm_s16le", "pcm"),
+            ("h264", "h264"),
+            ("mov_text", "mov_text"),
+            ("truehd", "truehd"),
+        ] {
+            assert_eq!(plex_codec(ffprobe), want);
+        }
     }
 }
