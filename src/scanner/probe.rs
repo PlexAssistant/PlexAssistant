@@ -134,12 +134,14 @@ pub struct Tags {
     pub language: String,
 }
 
-/// Parses ffprobe's seconds string into milliseconds; 0 when unknown.
+/// Parses ffprobe's seconds string into milliseconds, rounded like Plex
+/// ("4.023000" is 4022.999.. as a float); 0 when unknown.
 pub fn duration_ms(s: &str) -> i64 {
     if s.is_empty() || s == "N/A" {
         return 0;
     }
-    s.parse::<f64>().map_or(0, |secs| (secs * 1000.0) as i64)
+    s.parse::<f64>()
+        .map_or(0, |secs| (secs * 1000.0).round() as i64)
 }
 
 #[cfg(test)]
@@ -199,6 +201,8 @@ pub(super) mod tests {
     fn durations() {
         for (input, want) in [
             ("20.016000", 20016),
+            ("4.023000", 4023),
+            ("4.014667", 4015),
             ("0.5", 500),
             ("", 0),
             ("N/A", 0),
