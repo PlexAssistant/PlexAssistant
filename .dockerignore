@@ -1,4 +1,3 @@
-# never enter the build context
 .git/
 .direnv/
 private/
@@ -6,6 +5,7 @@ data/
 testdata/
 dist/
 target/
+tests/
 docs/
 config/
 scripts/
