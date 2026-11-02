@@ -79,6 +79,14 @@ impl Breaker {
         }
     }
 
+    /// Hands back a probe slot whose request was refused before reaching
+    /// the upstream, so the next request can probe instead.
+    pub fn release_probe(&mut self) {
+        if self.state == (State::HalfOpen { claimed: true }) {
+            self.state = State::HalfOpen { claimed: false };
+        }
+    }
+
     /// Closes the breaker and resets the backoff sequence.
     pub fn record_success(&mut self) {
         self.state = State::Closed;
@@ -115,12 +123,26 @@ impl Breaker {
 }
 
 /// Keeps one breaker per upstream domain.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct Breakers {
+    cfg: BreakerConfig,
     by_domain: Mutex<HashMap<String, Breaker>>,
 }
 
+impl Default for Breakers {
+    fn default() -> Self {
+        Self::new(DEFAULT_BREAKER)
+    }
+}
+
 impl Breakers {
+    pub fn new(cfg: BreakerConfig) -> Self {
+        Self {
+            cfg,
+            by_domain: Mutex::default(),
+        }
+    }
+
     fn with<T>(&self, domain: &str, f: impl FnOnce(&mut Breaker) -> T) -> T {
         let mut map = self
             .by_domain
@@ -128,12 +150,16 @@ impl Breakers {
             .unwrap_or_else(PoisonError::into_inner);
         let breaker = map
             .entry(domain.to_owned())
-            .or_insert_with(|| Breaker::new(DEFAULT_BREAKER));
+            .or_insert_with(|| Breaker::new(self.cfg));
         f(breaker)
     }
 
     pub fn allow(&self, domain: &str, now: Instant, force: bool) -> Admit {
         self.with(domain, |b| b.allow(now, force))
+    }
+
+    pub fn release_probe(&self, domain: &str) {
+        self.with(domain, Breaker::release_probe);
     }
 
     pub fn record_success(&self, domain: &str) {
@@ -225,6 +251,29 @@ mod tests {
             b.allow(now + DEFAULT_BREAKER.max_cool - SECOND, false),
             Admit::Reject
         );
+    }
+
+    #[test]
+    fn released_probe_can_be_reclaimed() {
+        let now = Instant::now();
+        let mut b = opened(now);
+        let after = now + BASE + SECOND;
+        assert_eq!(b.allow(after, false), Admit::Probe);
+        b.release_probe();
+        assert_eq!(b.state_name(), "half-open");
+        assert_eq!(b.allow(after, false), Admit::Probe, "slot handed back");
+        assert_eq!(b.allow(after, false), Admit::Reject);
+    }
+
+    #[test]
+    fn release_outside_half_open_is_a_no_op() {
+        let now = Instant::now();
+        let mut b = opened(now);
+        b.release_probe();
+        assert_eq!(b.allow(now, false), Admit::Reject, "still open");
+        let mut closed = Breaker::new(DEFAULT_BREAKER);
+        closed.release_probe();
+        assert_eq!(closed.state_name(), "closed");
     }
 
     #[test]
