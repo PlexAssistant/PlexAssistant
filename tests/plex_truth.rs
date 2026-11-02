@@ -76,6 +76,11 @@ const KNOWN: &[(&str, &str, &str)] = &[
         "same as stream 1.channels",
     ),
     (
+        "h264_aac.flv",
+        "stream 1.extra_data",
+        "same: Plex records a stereo layout, ffprobe a mono one",
+    ),
+    (
         "h264_dts_truehd.mkv",
         "stream 1.bitrate",
         "Plex's ffmpeg reports no DTS bitrate, ffprobe 6.1 reads 1411200",
@@ -208,9 +213,7 @@ fn matches_plex_analysis() {
             d.int(&at("default"), ours.default.into(), &plex["default"]);
             d.int(&at("forced"), ours.forced.into(), &plex["forced"]);
             d.int(&at("bitrate"), ours.bitrate, &plex["bitrate"]);
-            if ours.type_id == 1 {
-                d.text(&at("extra_data"), &ours.extra_data, &plex["extra_data"]);
-            }
+            d.text(&at("extra_data"), &ours.extra_data, &plex["extra_data"]);
             let channels = if plex["channels"].is_null() {
                 0
             } else {

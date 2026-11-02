@@ -1,7 +1,7 @@
 use crate::linkres::Link;
 use crate::plexdb::{Part, StreamRow, WriteSpec};
 
-use super::extra::video_extra;
+use super::extra::{audio_extra, subtitle_extra, video_extra};
 use super::lang::normalize_lang;
 use super::parse::{atoi64, parse_fps, parse_ratio};
 use super::probe::{ProbeResult, duration_ms};
@@ -41,21 +41,25 @@ pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
             forced: s.disposition.forced != 0,
             extra_data: String::new(),
         };
-        if type_id == 1 {
-            // the client's displayTitle ("2160p HDR10", ...) is derived
-            // from the ma: fields in extra_data
-            row.extra_data = video_extra(s, &spec.container).encode();
-            if spec.video_codec.is_empty() {
-                spec.video_codec = row.codec.clone();
-                spec.width = s.width;
-                spec.height = s.height;
-                spec.aspect_ratio = match parse_ratio(&s.display_aspect_ratio) {
-                    0.0 if s.height > 0 => s.width as f64 / s.height as f64,
-                    ratio => ratio,
-                };
-                spec.fps = parse_fps(&s.frame_rate);
-                spec.color_trc = s.color_transfer.clone();
+        match type_id {
+            1 => {
+                // the client's displayTitle ("2160p HDR10", ...) is derived
+                // from the ma: fields in extra_data
+                row.extra_data = video_extra(s, &spec.container).encode();
+                if spec.video_codec.is_empty() {
+                    spec.video_codec = row.codec.clone();
+                    spec.width = s.width;
+                    spec.height = s.height;
+                    spec.aspect_ratio = match parse_ratio(&s.display_aspect_ratio) {
+                        0.0 if s.height > 0 => s.width as f64 / s.height as f64,
+                        ratio => ratio,
+                    };
+                    spec.fps = parse_fps(&s.frame_rate);
+                    spec.color_trc = s.color_transfer.clone();
+                }
             }
+            2 => row.extra_data = audio_extra(s, &spec.container).encode(),
+            _ => row.extra_data = subtitle_extra(s, &spec.container).encode(),
         }
         spec.streams.push(row);
     }
@@ -199,7 +203,14 @@ mod tests {
         // a present stream bitrate is kept (fallback only fires when missing)
         assert_eq!(spec.streams[0].bitrate, 612000);
         assert!(spec.streams[0].extra_data.contains(r#""ma:width":"1280""#));
-        assert!(spec.streams[1].extra_data.is_empty());
+        // AAC: sampling rate, but no layout (Plex's ffmpeg has none)
+        assert!(
+            spec.streams[1]
+                .extra_data
+                .starts_with(r#"{"ma:samplingRate":"48000""#)
+        );
+        // an MKV subtitle has no container-level id, so nothing to store
+        assert!(spec.streams[2].extra_data.is_empty());
     }
 
     #[test]
