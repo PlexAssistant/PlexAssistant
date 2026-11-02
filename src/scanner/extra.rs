@@ -85,6 +85,39 @@ pub(super) fn video_extra(s: &Stream, container: &str) -> Extra {
     e
 }
 
+/// The ma: fields of an audio stream. Plex's own ffmpeg reports no
+/// channel layout for AAC (outside FLV, whose header carries it) and DTS,
+/// and names a profile only for DTS and PCM.
+pub(super) fn audio_extra(s: &Stream, container: &str) -> Extra {
+    let mut e = Extra::default();
+    let layout_known = match s.codec_name.as_str() {
+        "aac" => container == "flv",
+        "dts" => false,
+        _ => true,
+    };
+    if layout_known {
+        e.set("ma:audioChannelLayout", known(&s.channel_layout));
+    }
+    // lossless codecs only; lossy ones report none
+    let depth = s.bit_depth.parse().map_or_else(|_| String::new(), positive);
+    e.set("ma:bitDepth", depth);
+    match s.codec_name.as_str() {
+        "dts" => e.set("ma:profile", plex_profile(&s.profile)),
+        pcm if pcm.starts_with("pcm_") => e.set("ma:profile", pcm),
+        _ => {}
+    }
+    e.set("ma:samplingRate", known(&s.sample_rate));
+    e.set("ma:streamIdentifier", stream_identifier(s, container));
+    e
+}
+
+/// Subtitle streams only carry their container-level id.
+pub(super) fn subtitle_extra(s: &Stream, container: &str) -> Extra {
+    let mut e = Extra::default();
+    e.set("ma:streamIdentifier", stream_identifier(s, container));
+    e
+}
+
 /// The container-level id of a stream: ffprobe's hex id in decimal (MP4
 /// track id, MPEG-TS PID, ...). Where ffprobe shows none, Plex's demuxers
 /// still number ASF streams from 1 and AVI/Ogg streams by index, with 0
@@ -264,6 +297,37 @@ mod tests {
         assert_eq!(id("", 0, "asf"), "1");
         assert_eq!(id("", 1, "avi"), "1");
         assert_eq!(id("", 0, "avi"), "");
+    }
+
+    #[test]
+    fn audio_fields() {
+        let stream = |codec: &str, layout: &str, depth: &str, profile: &str| Stream {
+            codec_name: codec.into(),
+            channel_layout: layout.into(),
+            bit_depth: depth.into(),
+            profile: profile.into(),
+            sample_rate: "48000".into(),
+            ..Default::default()
+        };
+        let keys = |s: &Stream, container: &str| -> Vec<&'static str> {
+            audio_extra(s, container).0.into_keys().collect()
+        };
+        assert_eq!(
+            keys(&stream("aac", "stereo", "", "LC"), "mkv"),
+            ["ma:samplingRate"]
+        );
+        assert_eq!(
+            keys(&stream("aac", "stereo", "", "LC"), "flv"),
+            ["ma:audioChannelLayout", "ma:samplingRate"]
+        );
+        let flac = audio_extra(&stream("flac", "mono", "16", ""), "mkv");
+        assert_eq!(flac.0["ma:bitDepth"], "16");
+        let dts = audio_extra(&stream("dts", "5.1(side)", "0", "DTS-HD MA"), "mkv");
+        assert_eq!(dts.0["ma:profile"], "dts-hd ma");
+        assert!(!dts.0.contains_key("ma:audioChannelLayout"));
+        assert!(!dts.0.contains_key("ma:bitDepth"));
+        let pcm = audio_extra(&stream("pcm_s24le", "mono", "24", ""), "mov");
+        assert_eq!(pcm.0["ma:profile"], "pcm_s24le");
     }
 
     #[test]
