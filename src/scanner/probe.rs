@@ -133,7 +133,16 @@ pub struct Stream {
     pub refs: i64,
     /// e.g. "16:9"
     pub display_aspect_ratio: String,
+    pub disposition: Disposition,
     pub tags: Tags,
+}
+
+/// The stream's track flags.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct Disposition {
+    pub default: i64,
+    pub forced: i64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]

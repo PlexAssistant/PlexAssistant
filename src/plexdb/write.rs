@@ -15,6 +15,8 @@ pub struct StreamRow {
     pub index: i64,
     pub channels: i64,
     pub bitrate: i64,
+    pub default: bool,
+    pub forced: bool,
     /// JSON; ma:profile drives the client's stream label
     pub extra_data: String,
 }
@@ -105,8 +107,9 @@ impl Db {
             let mut insert = tx.prepare(
                 r#"INSERT INTO media_streams
                     (stream_type_id, media_item_id, media_part_id, codec, language,
-                     "index", channels, bitrate, "default", forced, extra_data, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,0,0,?,?)"#,
+                     "index", channels, bitrate, "default", forced, extra_data, url,
+                     created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,'',?,?)"#,
             )?;
             for s in &spec.streams {
                 // NULL when unknown, like the official rows; language is
@@ -120,7 +123,10 @@ impl Db {
                     s.index,
                     Some(s.channels).filter(|&c| c > 0),
                     Some(s.bitrate).filter(|&b| b > 0),
+                    s.default,
+                    s.forced,
                     Some(s.extra_data.as_str()).filter(|e| !e.is_empty()),
+                    now,
                     now,
                 ])?;
             }
@@ -177,7 +183,8 @@ mod tests {
                 CREATE TABLE media_streams (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   stream_type_id INTEGER, media_item_id INTEGER, media_part_id INTEGER,
                   codec TEXT, language TEXT, "index" INTEGER, channels INTEGER, bitrate INTEGER,
-                  "default" INTEGER, forced INTEGER, extra_data TEXT, updated_at INTEGER);"#,
+                  "default" INTEGER, forced INTEGER, extra_data TEXT, url TEXT,
+                  created_at INTEGER, updated_at INTEGER);"#,
             )
             .unwrap();
         (dir, db)
@@ -210,6 +217,7 @@ mod tests {
                 },
                 StreamRow {
                     type_id: 2,
+                    default: true,
                     codec: "aac".into(),
                     index: 1,
                     language: String::new(),

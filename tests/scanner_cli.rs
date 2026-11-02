@@ -64,7 +64,8 @@ impl Rig {
             CREATE TABLE media_streams (id INTEGER PRIMARY KEY AUTOINCREMENT,
               stream_type_id INTEGER, media_item_id INTEGER, media_part_id INTEGER,
               codec TEXT, language TEXT, "index" INTEGER, channels INTEGER, bitrate INTEGER,
-              "default" INTEGER, forced INTEGER, extra_data TEXT, updated_at INTEGER);"#,
+              "default" INTEGER, forced INTEGER, extra_data TEXT, url TEXT,
+              created_at INTEGER, updated_at INTEGER);"#,
         )
         .unwrap();
         conn.execute(
