@@ -1,4 +1,4 @@
-//! Command fakecloud is a fake cloud drive for the test rig: /file/{id}
+//! Command strmock is a fake cloud drive for the test rig: /file/{id}
 //! resolves to a signed direct link via 302, /dl/{id} serves the bytes
 //! with injectable failure modes (403/410/throttle) controlled at runtime
 //! via POST /ctl.
@@ -36,7 +36,7 @@ async fn main() -> ExitCode {
         None => args.addr,
     };
     println!(
-        "fakecloud listening on {addr}, root {}",
+        "strmock listening on {addr}, root {}",
         args.root.display()
     );
     let app = cloud::Server::new(&args.secret, args.root, args.ttl).router();
@@ -51,7 +51,7 @@ async fn main() -> ExitCode {
     match served {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("fakecloud: {e}");
+            eprintln!("strmock: {e}");
             ExitCode::FAILURE
         }
     }

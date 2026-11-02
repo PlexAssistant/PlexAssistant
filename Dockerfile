@@ -4,7 +4,7 @@
 #
 # Other targets:
 #   dist         the static binary alone (just build-linux)
-#   fakecloud    the test rig's fake cloud drive (compose.dev.yaml)
+#   strmock    the test rig's fake cloud drive (compose.dev.yaml)
 #   ffprobe-bin  the image's ffprobe alone (scripts/plex-truth.sh)
 FROM rust:1.99-alpine AS build
 RUN apk add --no-cache build-base
@@ -20,7 +20,7 @@ ENV ASSISTANT_VERSION=${VERSION}
 RUN --mount=type=cache,id=cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-target-${TARGETPLATFORM},target=/src/target \
     cargo build --release --locked --bins && \
-    mkdir -p /out && cp target/release/assistant target/release/fakecloud /out/
+    mkdir -p /out && cp target/release/assistant target/release/strmock /out/
 
 # ffprobe for the scanner, built static with only what probing needs:
 # demuxers, parsers, decoders and the network protocols. Ubuntu's ffmpeg
@@ -56,10 +56,10 @@ FROM scratch AS dist
 ARG TARGETARCH
 COPY --from=build /out/assistant /assistant-linux-${TARGETARCH}
 
-FROM scratch AS fakecloud
-COPY --from=build /out/fakecloud /fakecloud
+FROM scratch AS strmock
+COPY --from=build /out/strmock /strmock
 EXPOSE 8399
-ENTRYPOINT ["/fakecloud"]
+ENTRYPOINT ["/strmock"]
 
 FROM lscr.io/linuxserver/plex:latest
 ARG VERSION=dev
