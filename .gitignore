@@ -3,6 +3,9 @@
 /bin/
 /dist/
 
+# Rust
+/target/
+
 # Nix / direnv
 result
 result-*
