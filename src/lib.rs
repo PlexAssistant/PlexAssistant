@@ -2,3 +2,4 @@
 //! `assistant` binary that replaces the Plex Scanner and Transcoder.
 
 pub mod linkres;
+pub mod plexdb;
