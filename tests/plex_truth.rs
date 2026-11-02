@@ -83,7 +83,7 @@ const KNOWN: &[(&str, &str, &str)] = &[
     (
         "h264_dts_truehd.mkv",
         "stream 1.bitrate",
-        "Plex's ffmpeg reports no DTS bitrate, ffprobe 6.1 reads 1411200",
+        "Plex's ffmpeg reports no DTS bitrate, ffprobe 8.0.1 reads 1411200",
     ),
     (
         "h264_dts_truehd.mkv",
