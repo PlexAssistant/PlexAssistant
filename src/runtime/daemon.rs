@@ -149,19 +149,28 @@ async fn handle_resolve(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
     // gatekeeping for scan-driven resolutions only
     let now = Instant::now();
     let domain = host_of(&req.target);
-    if d.breakers.allow(&domain, now, false) == Admit::Reject {
+    let admit = d.breakers.allow(&domain, now, false);
+    if admit == Admit::Reject {
         return error(
             StatusCode::SERVICE_UNAVAILABLE,
             format!("breaker open for {domain}"),
         );
     }
+    // a probe refused below never reached the upstream: hand its slot
+    // back, or the breaker would stay half-open and reject every scan
+    let refuse = |status, msg: String| {
+        if admit == Admit::Probe {
+            d.breakers.release_probe(&domain);
+        }
+        error(status, msg)
+    };
     match d.cache.should_skip(&req.target, SystemTime::now()) {
-        Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, e),
-        Ok(true) => return error(StatusCode::TOO_MANY_REQUESTS, "target backing off"),
+        Err(e) => return refuse(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Ok(true) => return refuse(StatusCode::TOO_MANY_REQUESTS, "target backing off".into()),
         Ok(false) => {}
     }
     if !d.quota.allow(&domain, now) {
-        return error(
+        return refuse(
             StatusCode::TOO_MANY_REQUESTS,
             format!("quota exceeded for {domain}"),
         );
@@ -365,6 +374,61 @@ mod tests {
         // the forced success closed the breaker for scans again
         assert!(!resolve_via(&base, &target("ep5")).await.cached);
         assert!(resolve_via(&base, &target("ep5")).await.cached);
+    }
+
+    /// A probe refused by the ledger must not wedge the breaker half-open:
+    /// the next scan gets the probe and closes it again.
+    #[tokio::test]
+    async fn refused_probe_is_released() {
+        use crate::runtime::breaker::BreakerConfig;
+
+        let broken = Arc::new(AtomicBool::new(true));
+        let flag = Arc::clone(&broken);
+        let upstream = spawn(
+            Router::new()
+                .route(
+                    "/file/{id}",
+                    get(move || async move {
+                        if flag.load(Ordering::SeqCst) {
+                            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                        } else {
+                            found("/dl/ok".into())
+                        }
+                    }),
+                )
+                .route("/dl/{id}", get(|| async { partial_content() })),
+        )
+        .await;
+        let (_dir, cache) = test_cache();
+        // zero cooldown: an open breaker turns half-open immediately
+        let instant = BreakerConfig {
+            threshold: 3,
+            base_cool: Duration::ZERO,
+            max_cool: Duration::ZERO,
+        };
+        let daemon = Arc::new(Daemon {
+            cache: Arc::new(cache),
+            ua: String::new(),
+            breakers: Breakers::new(instant),
+            quota: Quota::new(30, QUOTA_WINDOW),
+        });
+        let base = spawn(daemon.router()).await;
+        let target = |ep: &str| format!("{upstream}/file/{ep}");
+
+        for ep in ["ep1", "ep2", "ep3"] {
+            let (status, _) = post(&base, "/resolve", &target(ep)).await;
+            assert_eq!(status, StatusCode::BAD_GATEWAY, "{ep}");
+        }
+        broken.store(false, Ordering::SeqCst);
+
+        // ep1 is backing off: it takes the probe slot, then the ledger refuses it
+        let (status, _) = post(&base, "/resolve", &target("ep1")).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+
+        // the slot was handed back, so a fresh target can probe and close it
+        let (status, body) = post(&base, "/resolve", &target("ep9")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(daemon.breakers.snapshot().values().next(), Some(&"closed"));
     }
 
     #[tokio::test]
