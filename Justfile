@@ -1,3 +1,6 @@
+# version baked into binaries and image labels
+version := `git describe --tags --always --dirty 2>/dev/null || echo dev`
+
 default:
     @just --list
 
@@ -6,7 +9,7 @@ build:
 
 # static linux binary for the rig, from the image's build stage
 build-linux arch="arm64":
-    docker build --platform linux/{{arch}} --target dist -o dist .
+    docker build --platform linux/{{arch}} --build-arg VERSION={{version}} --target dist -o dist .
 
 test:
     cargo test
@@ -18,7 +21,10 @@ fmt:
     cargo fmt
 
 image:
-    docker build -t plexassistant:dev .
+    docker build --build-arg VERSION={{version}} \
+        --build-arg REVISION=`git rev-parse HEAD` \
+        --build-arg CREATED=`date -u +%Y-%m-%dT%H:%M:%SZ` \
+        -t plexassistant:dev .
 
 gen-media base="http://fakecloud:8399" out="testdata":
     ./scripts/gen-media.sh {{base}} {{out}}
