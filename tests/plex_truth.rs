@@ -64,11 +64,33 @@ fn analyze(f: &Fixture) -> WriteSpec {
 }
 
 /// Differences we accept, with the reason: (fixture suffix, column).
-const KNOWN: &[(&str, &str, &str)] = &[(
-    "h264_aac.flv",
-    "stream 1.channels",
-    "Plex reads the FLV header's stereo flag, ffprobe the AAC config (mono)",
-)];
+const KNOWN: &[(&str, &str, &str)] = &[
+    (
+        "h264_aac.flv",
+        "stream 1.channels",
+        "Plex reads the FLV header's stereo flag, ffprobe the AAC config (mono)",
+    ),
+    (
+        "h264_aac.flv",
+        "item.audio_channels",
+        "same as stream 1.channels",
+    ),
+    (
+        "h264_dts_truehd.mkv",
+        "stream 1.bitrate",
+        "Plex's ffmpeg reports no DTS bitrate, ffprobe 6.1 reads 1411200",
+    ),
+    (
+        "h264_dts_truehd.mkv",
+        "stream 0.bitrate",
+        "so Plex leaves the DTS share in the video bitrate",
+    ),
+    (
+        "hevc_hdr10.mp4",
+        "stream 1.bitrate",
+        "E-AC3 estimate differs by 119 bps",
+    ),
+];
 
 /// Collects "where: ours != plex" lines.
 struct Diff<'a> {
@@ -133,6 +155,12 @@ fn matches_plex_analysis() {
         d.int("item.bitrate", spec.bitrate, &item["bitrate"]);
         d.text("item.container", &spec.container, &item["container"]);
         d.text("item.video_codec", &spec.video_codec, &item["video_codec"]);
+        d.text("item.audio_codec", &spec.audio_codec, &item["audio_codec"]);
+        d.int(
+            "item.audio_channels",
+            spec.audio_channels,
+            &item["audio_channels"],
+        );
         d.float(
             "item.display_aspect_ratio",
             spec.aspect_ratio,
@@ -177,6 +205,9 @@ fn matches_plex_analysis() {
             d.int(&at("stream_type_id"), ours.type_id, &plex["stream_type_id"]);
             d.text(&at("language"), &ours.language, &plex["language"]);
             d.text(&at("codec"), &ours.codec, &plex["codec"]);
+            d.int(&at("default"), ours.default.into(), &plex["default"]);
+            d.int(&at("forced"), ours.forced.into(), &plex["forced"]);
+            d.int(&at("bitrate"), ours.bitrate, &plex["bitrate"]);
             let channels = if plex["channels"].is_null() {
                 0
             } else {
