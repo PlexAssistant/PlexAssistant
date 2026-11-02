@@ -1,80 +1,168 @@
+//! extra_data the way Plex's analysis writes it: a JSON object of ma:/pv:
+//! fields in key order plus a url-encoded copy. PMS derives the client's
+//! displayTitle ("2160p HDR10", ...) and direct-play decisions from them.
+//! Field rules are measured in tests/fixtures/plex-1.43.5.11079.
+
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
 use super::parse::parse_fps;
 use super::probe::Stream;
 
-/// Composes the stream extra_data the way the official analysis does: a
-/// JSON object of ma: fields plus a url-encoded copy. PMS derives the
-/// client's displayTitle ("2160p HDR10", ...) from them. The output must
-/// stay byte-identical to what the Go implementation wrote.
-pub(super) fn build_video_extra(s: &Stream) -> String {
-    // already in key order, which url.Values.Encode also sorted by
-    let fields = [
-        ("ma:bitDepth", video_bit_depth(s)),
-        ("ma:chromaLocation", s.chroma_location.clone()),
-        (
-            "ma:chromaSubsampling",
-            chroma_subsampling(&s.pix_fmt).to_owned(),
-        ),
-        ("ma:codedHeight", itoa_or(s.coded_height, s.height)),
-        ("ma:codedWidth", itoa_or(s.coded_width, s.width)),
-        ("ma:colorPrimaries", s.color_primaries.clone()),
-        ("ma:colorRange", s.color_range.clone()),
-        ("ma:colorSpace", s.color_space.clone()),
-        ("ma:colorTrc", s.color_transfer.clone()),
-        ("ma:frameRate", format_frame_rate(&s.frame_rate)),
-        ("ma:hasScalingMatrix", "0".to_owned()),
-        ("ma:height", itoa_or(s.height, 0)),
-        ("ma:level", itoa_or(s.level, 0)),
-        ("ma:profile", s.profile.to_lowercase()),
-        ("ma:refFrames", itoa_or(s.refs, 0)),
-        ("ma:scanType", "progressive".to_owned()),
-        ("ma:width", itoa_or(s.width, 0)),
-    ];
+/// One extra_data object under construction; empty values are left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct Extra(BTreeMap<&'static str, String>);
 
-    let mut json = String::from("{");
-    let mut query = String::new();
-    for (key, value) in fields.iter().filter(|(_, v)| !v.is_empty()) {
-        if !query.is_empty() {
-            json.push(',');
-            query.push('&');
+impl Extra {
+    pub fn set(&mut self, key: &'static str, value: impl Into<String>) {
+        let value = value.into();
+        if !value.is_empty() {
+            self.0.insert(key, value);
         }
-        // for these values Go's %q and JSON escaping coincide
-        let _ = write!(json, "{}:{}", json_string(key), json_string(value));
-        let _ = write!(query, "{}={}", query_escape(key), query_escape(value));
     }
-    let _ = write!(json, ",\"url\":{}}}", json_string(&query));
-    json
+
+    /// Serializes to Plex's form, or "" (stored as NULL) when empty.
+    pub fn encode(&self) -> String {
+        if self.0.is_empty() {
+            return String::new();
+        }
+        let mut json = String::from("{");
+        let mut url = String::new();
+        for (key, value) in &self.0 {
+            if !url.is_empty() {
+                json.push(',');
+                url.push('&');
+            }
+            let _ = write!(json, "{}:{}", json_string(key), json_string(value));
+            let _ = write!(url, "{}={}", url_escape(key), url_escape(value));
+        }
+        let _ = write!(json, ",\"url\":{}}}", json_string(&url));
+        json
+    }
+}
+
+/// The ma: fields of a video stream. container is Plex's name for it.
+pub(super) fn video_extra(s: &Stream, container: &str) -> Extra {
+    let mut e = Extra::default();
+    let sar = s.sample_aspect_ratio.as_str();
+    if !matches!(sar, "" | "1:1" | "0:1" | "N/A") {
+        e.set("ma:anamorphic", "1");
+        e.set("ma:pixelAspectRatio", sar);
+    }
+    e.set("ma:bitDepth", video_bit_depth(s));
+    e.set("ma:chromaLocation", known(&s.chroma_location));
+    e.set("ma:chromaSubsampling", chroma_subsampling(&s.pix_fmt));
+    // Plex keeps the sample entry tag only where it decides playback:
+    // hvc1 vs hev1 for Apple clients, the MPEG-4 ASP flavour (xvid, divx)
+    if matches!(s.codec_name.as_str(), "hevc" | "mpeg4") {
+        e.set("ma:codecID", fourcc(&s.codec_tag_string));
+    }
+    // H.264 codes whole 16x16 macroblocks: 1080p is 1088 lines coded
+    let coded = |v: i64, fallback: i64| match non_zero(v, fallback) {
+        v if s.codec_name == "h264" => (v + 15) / 16 * 16,
+        v => v,
+    };
+    e.set("ma:codedHeight", positive(coded(s.coded_height, s.height)));
+    e.set("ma:codedWidth", positive(coded(s.coded_width, s.width)));
+    e.set("ma:colorPrimaries", known(&s.color_primaries));
+    e.set("ma:colorRange", known(&s.color_range));
+    e.set("ma:colorSpace", known(&s.color_space));
+    e.set("ma:colorTrc", known(&s.color_transfer));
+    e.set("ma:frameRate", format_frame_rate(&s.frame_rate));
+    if s.codec_name == "h264" {
+        e.set("ma:hasScalingMatrix", "0");
+    }
+    e.set("ma:height", positive(s.height));
+    // -99 is ffprobe's "unknown level"
+    if s.level > 0 {
+        e.set("ma:level", s.level.to_string());
+    }
+    e.set("ma:profile", plex_profile(&s.profile));
+    e.set("ma:refFrames", positive(s.refs));
+    e.set("ma:scanType", scan_type(&s.field_order));
+    e.set("ma:streamIdentifier", stream_identifier(s, container));
+    e.set("ma:width", positive(s.width));
+    e
+}
+
+/// The container-level id of a stream: ffprobe's hex id in decimal (MP4
+/// track id, MPEG-TS PID, ...). Where ffprobe shows none, Plex's demuxers
+/// still number ASF streams from 1 and AVI/Ogg streams by index, with 0
+/// meaning none.
+pub(super) fn stream_identifier(s: &Stream, container: &str) -> String {
+    let id = s.id.strip_prefix("0x").map_or_else(
+        || s.id.parse().ok(),
+        |hex| i64::from_str_radix(hex, 16).ok(),
+    );
+    let id = id.or(match container {
+        "asf" => Some(s.index + 1),
+        "avi" | "ogg" => Some(s.index),
+        _ => None,
+    });
+    id.map(positive).unwrap_or_default()
+}
+
+/// Lowercased, without the trailing " profile" ("Simple Profile" is
+/// "simple", "Profile 0" stays "profile 0").
+pub(super) fn plex_profile(profile: &str) -> String {
+    let profile = known(profile).to_lowercase();
+    match profile.strip_suffix(" profile") {
+        Some(base) => base.to_owned(),
+        None => profile,
+    }
+}
+
+fn scan_type(field_order: &str) -> &'static str {
+    match field_order {
+        "progressive" => "progressive",
+        "tt" | "bb" | "tb" | "bt" => "interlaced",
+        _ => "",
+    }
+}
+
+/// A printable sample entry fourcc, lowercased ("hvc1", "XVID" -> "xvid");
+/// ffprobe renders binary tags as "[0][0][0][0]".
+fn fourcc(tag: &str) -> String {
+    if tag.len() == 4 && tag.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        tag.to_ascii_lowercase()
+    } else {
+        String::new()
+    }
+}
+
+/// ffprobe's placeholder for a missing value reads as missing.
+fn known(value: &str) -> &str {
+    match value {
+        "unknown" | "unspecified" | "N/A" => "",
+        v => v,
+    }
+}
+
+fn non_zero(v: i64, fallback: i64) -> i64 {
+    if v == 0 { fallback } else { v }
+}
+
+fn positive(v: i64) -> String {
+    if v > 0 { v.to_string() } else { String::new() }
 }
 
 fn json_string(s: &str) -> String {
     serde_json::to_string(s).expect("strings always serialize")
 }
 
-/// Go's url.QueryEscape: unreserved bytes stay, space becomes '+',
-/// everything else is %XX. Unlike form_urlencoded, '~' stays and '*' is
-/// escaped.
-fn query_escape(s: &str) -> String {
+/// Plex's percent-encoding: only ASCII letters, digits, '-' and '_' stay
+/// literal; everything else, '.' and space included, is %XX.
+fn url_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            b' ' => out.push('+'),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' => out.push(b as char),
             _ => {
                 let _ = write!(out, "%{b:02X}");
             }
         }
     }
     out
-}
-
-fn itoa_or(v: i64, fallback: i64) -> String {
-    match if v == 0 { fallback } else { v } {
-        0 => String::new(),
-        n => n.to_string(),
-    }
 }
 
 /// Prefers bits_per_raw_sample, then the depth encoded in pix_fmt, else
@@ -131,74 +219,59 @@ fn format_frame_rate(v: &str) -> String {
 mod tests {
     use super::*;
 
-    // Captured from the Go implementation (buildVideoExtra) for the same
-    // streams; the Rust output must match byte for byte.
-    const GOLDEN_HDR: &str = r#"{"ma:bitDepth":"10","ma:chromaLocation":"left","ma:chromaSubsampling":"4:2:0","ma:codedHeight":"2160","ma:codedWidth":"3840","ma:colorPrimaries":"bt2020","ma:colorRange":"tv","ma:colorSpace":"bt2020nc","ma:colorTrc":"smpte2084","ma:frameRate":"23.976","ma:hasScalingMatrix":"0","ma:height":"2160","ma:level":"120","ma:profile":"main 10","ma:refFrames":"1","ma:scanType":"progressive","ma:width":"3840","url":"ma%3AbitDepth=10&ma%3AchromaLocation=left&ma%3AchromaSubsampling=4%3A2%3A0&ma%3AcodedHeight=2160&ma%3AcodedWidth=3840&ma%3AcolorPrimaries=bt2020&ma%3AcolorRange=tv&ma%3AcolorSpace=bt2020nc&ma%3AcolorTrc=smpte2084&ma%3AframeRate=23.976&ma%3AhasScalingMatrix=0&ma%3Aheight=2160&ma%3Alevel=120&ma%3Aprofile=main+10&ma%3ArefFrames=1&ma%3AscanType=progressive&ma%3Awidth=3840"}"#;
-    const GOLDEN_SDR: &str = r#"{"ma:bitDepth":"8","ma:chromaSubsampling":"4:2:0","ma:codedHeight":"720","ma:codedWidth":"1280","ma:frameRate":"24.000","ma:hasScalingMatrix":"0","ma:height":"720","ma:profile":"high","ma:scanType":"progressive","ma:width":"1280","url":"ma%3AbitDepth=8&ma%3AchromaSubsampling=4%3A2%3A0&ma%3AcodedHeight=720&ma%3AcodedWidth=1280&ma%3AframeRate=24.000&ma%3AhasScalingMatrix=0&ma%3Aheight=720&ma%3Aprofile=high&ma%3AscanType=progressive&ma%3Awidth=1280"}"#;
-    const GOLDEN_ODD: &str = r#"{"ma:bitDepth":"8","ma:chromaLocation":"top left","ma:chromaSubsampling":"4:2:2","ma:codedHeight":"1080","ma:codedWidth":"1920","ma:frameRate":"29.970","ma:hasScalingMatrix":"0","ma:height":"1080","ma:level":"-99","ma:profile":"weird \"q\" \\ *~ ü\tx","ma:refFrames":"4","ma:scanType":"progressive","ma:width":"1920","url":"ma%3AbitDepth=8&ma%3AchromaLocation=top+left&ma%3AchromaSubsampling=4%3A2%3A2&ma%3AcodedHeight=1080&ma%3AcodedWidth=1920&ma%3AframeRate=29.970&ma%3AhasScalingMatrix=0&ma%3Aheight=1080&ma%3Alevel=-99&ma%3Aprofile=weird+%22q%22+%5C+%2A~+%C3%BC%09x&ma%3ArefFrames=4&ma%3AscanType=progressive&ma%3Awidth=1920"}"#;
-    const GOLDEN_EMPTY: &str = r#"{"ma:hasScalingMatrix":"0","ma:scanType":"progressive","url":"ma%3AhasScalingMatrix=0&ma%3AscanType=progressive"}"#;
+    #[test]
+    fn encodes_like_plex() {
+        let mut e = Extra::default();
+        e.set("ma:width", "1920");
+        e.set("ma:frameRate", "23.976");
+        e.set("ma:profile", "constrained baseline");
+        e.set("ma:empty", "");
+        // keys sorted, empty values dropped, '.' and ' ' percent-encoded
+        assert_eq!(
+            e.encode(),
+            r#"{"ma:frameRate":"23.976","ma:profile":"constrained baseline","ma:width":"1920","url":"ma%3AframeRate=23%2E976&ma%3Aprofile=constrained%20baseline&ma%3Awidth=1920"}"#
+        );
+        assert_eq!(Extra::default().encode(), "");
+    }
 
-    fn hdr() -> Stream {
-        Stream {
-            width: 3840,
-            height: 2160,
-            coded_width: 3840,
-            coded_height: 2160,
-            profile: "Main 10".into(),
-            pix_fmt: "yuv420p10le".into(),
-            color_range: "tv".into(),
-            color_primaries: "bt2020".into(),
-            color_space: "bt2020nc".into(),
-            color_transfer: "smpte2084".into(),
-            chroma_location: "left".into(),
-            bit_depth: "10".into(),
-            level: 120,
-            refs: 1,
-            frame_rate: "24000/1001".into(),
-            ..Default::default()
+    #[test]
+    fn url_escape_like_plex() {
+        // values as Plex encoded them in tests/fixtures
+        for (raw, want) in [
+            ("5.1(side)", "5%2E1%28side%29"),
+            ("7.1(wide-side)", "7%2E1%28wide-side%29"),
+            ("pcm_s24le", "pcm_s24le"),
+            ("4:2:0", "4%3A2%3A0"),
+            (r#"{"Chapters":{}}"#, "%7B%22Chapters%22%3A%7B%7D%7D"),
+        ] {
+            assert_eq!(url_escape(raw), want);
         }
     }
 
     #[test]
-    fn matches_go_output() {
-        let sdr = Stream {
-            pix_fmt: "yuv420p".into(),
-            profile: "High".into(),
-            width: 1280,
-            height: 720,
-            frame_rate: "24/1".into(),
-            ..Default::default()
+    fn identifiers() {
+        let id = |id: &str, index: i64, container: &str| {
+            let s = Stream {
+                id: id.into(),
+                index,
+                ..Default::default()
+            };
+            stream_identifier(&s, container)
         };
-        // escaping corner cases: quotes, backslash, '*', '~', non-ASCII,
-        // tab and a negative level
-        let odd = Stream {
-            width: 1920,
-            height: 1080,
-            profile: "Weird \"q\" \\ *~ \u{fc}\tx".into(),
-            pix_fmt: "yuv422p".into(),
-            chroma_location: "top left".into(),
-            bit_depth: "N/A".into(),
-            level: -99,
-            refs: 4,
-            frame_rate: "30000/1001".into(),
-            ..Default::default()
-        };
-        assert_eq!(build_video_extra(&hdr()), GOLDEN_HDR);
-        assert_eq!(build_video_extra(&sdr), GOLDEN_SDR);
-        assert_eq!(build_video_extra(&odd), GOLDEN_ODD);
-        assert_eq!(build_video_extra(&Stream::default()), GOLDEN_EMPTY);
+        assert_eq!(id("0x1", 0, "mp4"), "1");
+        assert_eq!(id("0x1011", 0, "mpegts"), "4113");
+        assert_eq!(id("", 0, "mkv"), "");
+        assert_eq!(id("", 0, "asf"), "1");
+        assert_eq!(id("", 1, "avi"), "1");
+        assert_eq!(id("", 0, "avi"), "");
     }
 
     #[test]
-    fn output_is_valid_json() {
-        let v: serde_json::Value = serde_json::from_str(&build_video_extra(&hdr())).unwrap();
-        assert_eq!(v["ma:profile"], "main 10");
-        assert!(v["url"].as_str().unwrap().starts_with("ma%3AbitDepth=10&"));
-    }
-
-    #[test]
-    fn query_escape_like_go() {
-        assert_eq!(query_escape("a b*~-_.:/%"), "a+b%2A~-_.%3A%2F%25");
+    fn profiles() {
+        assert_eq!(plex_profile("Simple Profile"), "simple");
+        assert_eq!(plex_profile("Profile 0"), "profile 0");
+        assert_eq!(plex_profile("Main 10"), "main 10");
+        assert_eq!(plex_profile("unknown"), "");
     }
 
     #[test]
