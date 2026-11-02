@@ -1,0 +1,167 @@
+{
+  "file": "av1_flac.mkv",
+  "plex": "1.43.5.11079-b3b13e506",
+  "ffprobe": {
+    "streams": [
+      {
+        "index": 0,
+        "codec_name": "av1",
+        "codec_long_name": "Alliance for Open Media AV1",
+        "profile": "Main",
+        "codec_type": "video",
+        "codec_tag_string": "[0][0][0][0]",
+        "codec_tag": "0x0000",
+        "width": 1280,
+        "height": 720,
+        "coded_width": 1280,
+        "coded_height": 720,
+        "has_b_frames": 0,
+        "sample_aspect_ratio": "1:1",
+        "display_aspect_ratio": "16:9",
+        "pix_fmt": "yuv420p10le",
+        "level": 5,
+        "color_range": "tv",
+        "field_order": "progressive",
+        "refs": 1,
+        "r_frame_rate": "25/1",
+        "avg_frame_rate": "25/1",
+        "time_base": "1/1000",
+        "start_pts": 0,
+        "start_time": "0.000000",
+        "extradata_size": 17,
+        "disposition": {
+          "default": 0,
+          "dub": 0,
+          "original": 0,
+          "comment": 0,
+          "lyrics": 0,
+          "karaoke": 0,
+          "forced": 0,
+          "hearing_impaired": 0,
+          "visual_impaired": 0,
+          "clean_effects": 0,
+          "attached_pic": 0,
+          "timed_thumbnails": 0,
+          "non_diegetic": 0,
+          "captions": 0,
+          "descriptions": 0,
+          "metadata": 0,
+          "dependent": 0,
+          "still_image": 0,
+          "multilayer": 0
+        },
+        "tags": {
+          "ENCODER": "Lavc62.28.102 libsvtav1",
+          "DURATION": "00:00:04.000000000"
+        }
+      },
+      {
+        "index": 1,
+        "codec_name": "flac",
+        "codec_long_name": "FLAC (Free Lossless Audio Codec)",
+        "codec_type": "audio",
+        "codec_tag_string": "[0][0][0][0]",
+        "codec_tag": "0x0000",
+        "sample_fmt": "s16",
+        "sample_rate": "44100",
+        "channels": 1,
+        "channel_layout": "mono",
+        "bits_per_sample": 0,
+        "initial_padding": 0,
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0",
+        "time_base": "1/1000",
+        "start_pts": 0,
+        "start_time": "0.000000",
+        "bits_per_raw_sample": "16",
+        "extradata_size": 34,
+        "disposition": {
+          "default": 0,
+          "dub": 0,
+          "original": 0,
+          "comment": 0,
+          "lyrics": 0,
+          "karaoke": 0,
+          "forced": 0,
+          "hearing_impaired": 0,
+          "visual_impaired": 0,
+          "clean_effects": 0,
+          "attached_pic": 0,
+          "timed_thumbnails": 0,
+          "non_diegetic": 0,
+          "captions": 0,
+          "descriptions": 0,
+          "metadata": 0,
+          "dependent": 0,
+          "still_image": 0,
+          "multilayer": 0
+        },
+        "tags": {
+          "ENCODER": "Lavc62.28.102 flac",
+          "DURATION": "00:00:04.000000000"
+        }
+      }
+    ],
+    "chapters": [],
+    "format": {
+      "nb_streams": 2,
+      "nb_programs": 0,
+      "nb_stream_groups": 0,
+      "format_name": "matroska,webm",
+      "format_long_name": "Matroska / WebM",
+      "start_time": "0.000000",
+      "duration": "4.000000",
+      "size": "1486218",
+      "bit_rate": "2972436",
+      "probe_score": 100,
+      "tags": {
+        "ENCODER": "Lavf62.12.102"
+      }
+    }
+  },
+  "media_item": {
+    "container": "mkv",
+    "width": 1280,
+    "height": 720,
+    "duration": 4000,
+    "bitrate": 2972436,
+    "video_codec": "av1",
+    "audio_codec": "flac",
+    "display_aspect_ratio": 1.7777777910232544,
+    "frames_per_second": 25.0,
+    "audio_channels": 1,
+    "color_trc": "",
+    "extra_data": "{\"ma:videoProfile\":\"main\",\"url\":\"ma%3AvideoProfile=main\"}"
+  },
+  "media_part": {
+    "size": 1486218,
+    "duration": 4000,
+    "extra_data": "{\"ma:container\":\"mkv\",\"ma:videoProfile\":\"main\",\"pv:chapters\":\"{\\\"Chapters\\\":{}}\",\"url\":\"ma%3Acontainer=mkv&ma%3AvideoProfile=main&pv%3Achapters=%7B%22Chapters%22%3A%7B%7D%7D\"}"
+  },
+  "streams": [
+    {
+      "stream_type_id": 1,
+      "index": 0,
+      "codec": "av1",
+      "language": "en",
+      "channels": null,
+      "bitrate": 2972436,
+      "default": 0,
+      "forced": 0,
+      "url": "",
+      "extra_data": "{\"ma:bitDepth\":\"10\",\"ma:chromaSubsampling\":\"4:2:0\",\"ma:codedHeight\":\"720\",\"ma:codedWidth\":\"1280\",\"ma:colorRange\":\"tv\",\"ma:frameRate\":\"25.000\",\"ma:height\":\"720\",\"ma:level\":\"5\",\"ma:profile\":\"main\",\"ma:refFrames\":\"1\",\"ma:scanType\":\"progressive\",\"ma:width\":\"1280\",\"url\":\"ma%3AbitDepth=10&ma%3AchromaSubsampling=4%3A2%3A0&ma%3AcodedHeight=720&ma%3AcodedWidth=1280&ma%3AcolorRange=tv&ma%3AframeRate=25%2E000&ma%3Aheight=720&ma%3Alevel=5&ma%3Aprofile=main&ma%3ArefFrames=1&ma%3AscanType=progressive&ma%3Awidth=1280\"}"
+    },
+    {
+      "stream_type_id": 2,
+      "index": 1,
+      "codec": "flac",
+      "language": "en",
+      "channels": 1,
+      "bitrate": null,
+      "default": 0,
+      "forced": 0,
+      "url": "",
+      "extra_data": "{\"ma:audioChannelLayout\":\"mono\",\"ma:bitDepth\":\"16\",\"ma:samplingRate\":\"44100\",\"url\":\"ma%3AaudioChannelLayout=mono&ma%3AbitDepth=16&ma%3AsamplingRate=44100\"}"
+    }
+  ]
+}
