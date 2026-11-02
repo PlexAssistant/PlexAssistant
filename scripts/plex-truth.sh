@@ -2,13 +2,15 @@
 # Capture ground truth from a stock Plex: generate a media set covering
 # the codecs, containers, languages and flags we care about, let the
 # official scanner analyze it, and write one fixture per file with the
-# ffprobe output (from the image's own ffprobe) and the rows Plex wrote.
+# ffprobe output (from the release image's ffprobe, built from this repo's
+# Dockerfile) and the rows Plex wrote.
 #
 # Usage: plex-truth.sh [fixtures-root] [plex-image]
 # Needs docker, ffmpeg (with x264/x265/svt-av1/vpx/theora/xvid), jq, and
 # rsync for the bitmap subtitle samples.
 set -euo pipefail
 
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "${1:-tests/fixtures}"
 ROOT="$(cd "${1:-tests/fixtures}" && pwd)"
 IMAGE="${2:-lscr.io/linuxserver/plex:latest}"
@@ -100,7 +102,8 @@ sleep 10 # let the last analysis commit
 plexsql ".backup /tmp/truth.db"
 docker cp "$NAME:/tmp/truth.db" truth.db
 # probe with the ffprobe the release image ships, not the host's
-docker exec "$NAME" sh -c 'apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends ffmpeg >/dev/null'
+docker build -q --target ffprobe-bin -o "$WORK/bin" "$REPO" >/dev/null
+docker cp "$WORK/bin/ffprobe" "$NAME:/usr/local/bin/ffprobe"
 
 q() { docker exec "$NAME" "/usr/lib/plexmediaserver/Plex SQLite" -json /tmp/truth.db "$1"; }
 

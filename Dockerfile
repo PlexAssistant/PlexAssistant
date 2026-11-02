@@ -3,8 +3,9 @@
 # with the s6 services. Works for any platform via buildx.
 #
 # Other targets:
-#   dist       the static binary alone (just build-linux)
-#   fakecloud  the test rig's fake cloud drive (compose.dev.yaml)
+#   dist         the static binary alone (just build-linux)
+#   fakecloud    the test rig's fake cloud drive (compose.dev.yaml)
+#   ffprobe-bin  the image's ffprobe alone (scripts/plex-truth.sh)
 FROM rust:1.99-alpine AS build
 RUN apk add --no-cache build-base
 WORKDIR /src
@@ -20,6 +21,36 @@ RUN --mount=type=cache,id=cargo-registry,sharing=locked,target=/usr/local/cargo/
     --mount=type=cache,id=cargo-target-${TARGETPLATFORM},target=/src/target \
     cargo build --release --locked --bins && \
     mkdir -p /out && cp target/release/assistant target/release/fakecloud /out/
+
+# ffprobe for the scanner, built static with only what probing needs:
+# demuxers, parsers, decoders and the network protocols. Ubuntu's ffmpeg
+# package would pull ~440 MB (LLVM, Mesa, ...) into the image for this
+# one tool. The source is GitHub's archive of FFmpeg's n8.0.1 tag (commit
+# 894da5ca7d74), pinned by checksum; 8.0.1 matches the ffprobe the
+# fixtures in tests/fixtures were first captured with.
+FROM alpine:3.24 AS ffprobe
+RUN apk add --no-cache build-base nasm pkgconf openssl-dev openssl-libs-static zlib-dev zlib-static
+ARG FFMPEG_VERSION=8.0.1
+ARG FFMPEG_SHA256=679aa13a19415d5ddab91e580084e3ab20c963c8240001e5cbb955a97bdd81b1
+WORKDIR /ffmpeg
+RUN wget -qO ffmpeg.tar.gz "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${FFMPEG_VERSION}.tar.gz" && \
+    echo "${FFMPEG_SHA256}  ffmpeg.tar.gz" | sha256sum -c - && \
+    tar xzf ffmpeg.tar.gz --strip-components=1 && rm ffmpeg.tar.gz
+# swresample/swscale stay: decoders such as opus depend on them, and
+# configure would silently drop those decoders without them. OpenSSL 3
+# (Apache-2.0) needs --enable-version3, which suits this GPL-3.0 project.
+RUN ./configure \
+        --pkg-config-flags=--static --extra-ldflags=-static \
+        --enable-version3 --disable-autodetect --enable-openssl --enable-zlib \
+        --disable-everything --disable-programs --enable-ffprobe \
+        --disable-doc --disable-debug --disable-avdevice --disable-avfilter \
+        --enable-demuxers --enable-parsers --enable-decoders --enable-bsfs \
+        --enable-protocol=file,pipe,data,crypto,tcp,tls,http,https,httpproxy && \
+    make -j"$(nproc)" ffprobe && \
+    strip ffprobe && mkdir -p /out && cp ffprobe /out/
+
+FROM scratch AS ffprobe-bin
+COPY --from=ffprobe /out/ffprobe /ffprobe
 
 FROM scratch AS dist
 ARG TARGETARCH
@@ -47,9 +78,6 @@ LABEL org.opencontainers.image.title="PlexAssistant" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.ref.name="${VERSION}" \
       org.opencontainers.image.created="${CREATED}"
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
-
 COPY packaging/s6-overlay/ /etc/s6-overlay/
+COPY --from=ffprobe /out/ffprobe /usr/local/bin/ffprobe
 COPY --from=build /out/assistant /usr/local/bin/assistant
