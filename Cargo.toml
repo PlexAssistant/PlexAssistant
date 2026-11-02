@@ -11,6 +11,7 @@ name = "assistant"
 path = "src/main.rs"
 
 [dependencies]
+url = "2.5.8"
 
 [profile.release]
 lto = true
