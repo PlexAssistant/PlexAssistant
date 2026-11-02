@@ -174,6 +174,7 @@ fn matches_plex_analysis() {
             let at = |col: &str| format!("stream {}.{col}", ours.index);
             d.int(&at("index"), ours.index, &plex["index"]);
             d.int(&at("stream_type_id"), ours.type_id, &plex["stream_type_id"]);
+            d.text(&at("language"), &ours.language, &plex["language"]);
             let channels = if plex["channels"].is_null() {
                 0
             } else {
