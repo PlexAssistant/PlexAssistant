@@ -101,7 +101,11 @@ pub struct FormatTags {
 #[serde(default)]
 pub struct Stream {
     pub index: i64,
+    /// container-level id in hex, e.g. "0x1" (MP4 track), "0x100" (TS PID)
+    pub id: String,
     pub codec_name: String,
+    /// sample entry fourcc, e.g. "hvc1"; "[0][0][0][0]" when binary
+    pub codec_tag_string: String,
     /// e.g. "Main 10", "High"
     pub profile: String,
     /// video | audio | subtitle
@@ -131,6 +135,10 @@ pub struct Stream {
     pub bit_depth: String,
     pub level: i64,
     pub refs: i64,
+    /// "progressive", or "tt"/"bb"/"tb"/"bt" for interlaced
+    pub field_order: String,
+    /// e.g. "32:27" for anamorphic SD
+    pub sample_aspect_ratio: String,
     /// e.g. "16:9"
     pub display_aspect_ratio: String,
     pub disposition: Disposition,

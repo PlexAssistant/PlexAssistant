@@ -208,6 +208,9 @@ fn matches_plex_analysis() {
             d.int(&at("default"), ours.default.into(), &plex["default"]);
             d.int(&at("forced"), ours.forced.into(), &plex["forced"]);
             d.int(&at("bitrate"), ours.bitrate, &plex["bitrate"]);
+            if ours.type_id == 1 {
+                d.text(&at("extra_data"), &ours.extra_data, &plex["extra_data"]);
+            }
             let channels = if plex["channels"].is_null() {
                 0
             } else {
