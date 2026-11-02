@@ -5,6 +5,7 @@ private/
 data/
 testdata/
 dist/
+target/
 docs/
 config/
 scripts/

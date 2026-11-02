@@ -1,5 +1,5 @@
 {
-  description = "PlexAssistant — native STRM support for Plex (Go)";
+  description = "PlexAssistant — native STRM support for Plex (Go, migrating to Rust)";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -22,6 +22,11 @@
             gopls
             delve
             golangci-lint
+            cargo
+            rustc
+            rustfmt
+            clippy
+            rust-analyzer
             clang
             sqlite
             ffmpeg
