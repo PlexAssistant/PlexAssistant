@@ -109,14 +109,14 @@ impl Db {
                    VALUES (?,?,?,?,?,?,?,?,0,0,?,?)"#,
             )?;
             for s in &spec.streams {
-                // NULL when unknown, like the official rows
-                let lang = Some(s.language.as_str()).filter(|l| !l.is_empty() && *l != "und");
+                // NULL when unknown, like the official rows; language is
+                // '' rather than NULL for untagged streams
                 insert.execute(params![
                     s.type_id,
                     spec.media_item_id,
                     spec.part_id,
                     s.codec,
-                    lang,
+                    s.language,
                     s.index,
                     Some(s.channels).filter(|&c| c > 0),
                     Some(s.bitrate).filter(|&b| b > 0),
@@ -212,7 +212,7 @@ mod tests {
                     type_id: 2,
                     codec: "aac".into(),
                     index: 1,
-                    language: "und".into(),
+                    language: String::new(),
                     channels: 2,
                     bitrate: 96000,
                     ..Default::default()
@@ -264,9 +264,12 @@ mod tests {
             value(&db, &format!("SELECT channels {audio}")),
             Value::Integer(2)
         );
-        // unknown values are stored as NULL
+        // unknown values are stored as NULL, an unknown language as ''
         assert_eq!(value(&db, &format!("SELECT channels {video}")), Value::Null);
-        assert_eq!(value(&db, &format!("SELECT language {audio}")), Value::Null);
+        assert_eq!(
+            value(&db, &format!("SELECT language {audio}")),
+            Value::Text(String::new())
+        );
         assert_eq!(
             value(&db, &format!("SELECT extra_data {audio}")),
             Value::Null
