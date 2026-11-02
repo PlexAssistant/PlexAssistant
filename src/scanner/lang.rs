@@ -28,7 +28,7 @@ mod tests {
 
     #[test]
     fn like_plex() {
-        // (tag, matroska, stored) as measured in tests/fixtures/plex-1.43.5
+        // (tag, matroska, stored) as measured in tests/fixtures/plex-1.43.5.11079
         for (tag, matroska, want) in [
             ("en", true, "en"),
             ("eng", true, "en"),
