@@ -77,20 +77,33 @@ fn itoa_or(v: i64, fallback: i64) -> String {
     }
 }
 
-/// Prefers bits_per_raw_sample, then the pix_fmt suffix.
+/// Prefers bits_per_raw_sample, then the depth encoded in pix_fmt, else
+/// 8 for any known format.
 fn video_bit_depth(s: &Stream) -> String {
     if !s.bit_depth.is_empty() && s.bit_depth != "N/A" {
         return s.bit_depth.clone();
     }
-    for suffix in ["16le", "12le", "10le", "16", "12", "10"] {
-        if s.pix_fmt.ends_with(suffix) {
-            return suffix.trim_end_matches("le").to_owned();
-        }
+    match pix_fmt_depth(&s.pix_fmt) {
+        Some(depth) => depth.to_string(),
+        None if s.pix_fmt.is_empty() => String::new(),
+        None => "8".to_owned(),
     }
-    if s.pix_fmt.is_empty() {
-        String::new()
-    } else {
-        "8".to_owned()
+}
+
+/// FFmpeg names every format deeper than 8 bits with an endianness
+/// suffix ("yuv420p10le", "yuv422p12be", "p010le"); the digits before it
+/// are the depth. Digits without that suffix belong to the name itself,
+/// as in "nv12", which is 8-bit.
+fn pix_fmt_depth(pix_fmt: &str) -> Option<u32> {
+    let base = pix_fmt
+        .strip_suffix("le")
+        .or_else(|| pix_fmt.strip_suffix("be"))?;
+    let digits_at = base
+        .rfind(|c: char| !c.is_ascii_digit())
+        .map_or(0, |i| i + 1);
+    match base[digits_at..].parse() {
+        Ok(depth @ (9 | 10 | 12 | 14 | 16)) => Some(depth),
+        _ => None,
     }
 }
 
@@ -157,12 +170,12 @@ mod tests {
             ..Default::default()
         };
         // escaping corner cases: quotes, backslash, '*', '~', non-ASCII,
-        // tab, a negative level and a big-endian pix_fmt
+        // tab and a negative level
         let odd = Stream {
             width: 1920,
             height: 1080,
             profile: "Weird \"q\" \\ *~ \u{fc}\tx".into(),
-            pix_fmt: "yuv422p12be".into(),
+            pix_fmt: "yuv422p".into(),
             chroma_location: "top left".into(),
             bit_depth: "N/A".into(),
             level: -99,
@@ -197,10 +210,20 @@ mod tests {
                 ..Default::default()
             })
         };
+        // pix_fmt values as ffprobe reports them
         assert_eq!(depth("yuv420p10le", ""), "10");
-        assert_eq!(depth("yuv444p16", ""), "16");
+        assert_eq!(depth("yuv422p12be", "N/A"), "12");
+        assert_eq!(depth("yuv444p16be", "N/A"), "16");
+        assert_eq!(depth("gray16be", "N/A"), "16");
+        assert_eq!(depth("p010le", ""), "10");
+        assert_eq!(depth("yuv420p9le", ""), "9");
+        // digits that are part of the name, not a depth
+        assert_eq!(depth("nv12", "N/A"), "8");
+        assert_eq!(depth("nv16", ""), "8");
+        assert_eq!(depth("rgb555le", ""), "8");
         assert_eq!(depth("yuv420p", "N/A"), "8");
         assert_eq!(depth("", ""), "");
+        // bits_per_raw_sample wins
         assert_eq!(depth("yuv420p", "12"), "12");
     }
 
