@@ -60,9 +60,19 @@ async fn run_within(
         }
     }
     if !refreshed {
+        // not even a different link could be had: book them dead
+        for swap in &swaps {
+            res.dead(&swap.target).await;
+        }
         return code;
     }
-    run_child(real, &rewritten).await
+    let code = run_child(real, &rewritten).await;
+    if code != 0 {
+        for swap in &swaps {
+            res.dead(&swap.target).await;
+        }
+    }
+    code
 }
 
 /// Starts the original, relays signals to it, waits and returns its exit

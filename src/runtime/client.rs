@@ -43,6 +43,27 @@ impl Client {
         self.post("refresh", target).await
     }
 
+    /// Records a dead cached link for ledger backoff.
+    pub async fn dead(&self, target: &str) -> Result<(), ClientError> {
+        let body = serde_json::to_vec(&TargetRequest {
+            target: target.to_owned(),
+        })?;
+        let resp = self
+            .http
+            .post("http://assistant/dead")
+            .header(CONTENT_TYPE, "application/json")
+            .body(body)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(ClientError::Status {
+                method: "dead",
+                status: resp.status().as_u16(),
+            });
+        }
+        Ok(())
+    }
+
     async fn post(&self, method: &'static str, target: &str) -> Result<Resolved, ClientError> {
         let body = serde_json::to_vec(&TargetRequest {
             target: target.to_owned(),

@@ -79,6 +79,7 @@ impl Daemon {
         Router::new()
             .route("/resolve", post(handle_resolve))
             .route("/refresh", post(handle_refresh))
+            .route("/dead", post(handle_dead))
             .route("/state", get(handle_state))
             .with_state(Arc::clone(self))
     }
@@ -183,6 +184,18 @@ async fn handle_resolve(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
 async fn handle_refresh(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
     match decode(&body) {
         Ok(req) => d.resolve_and_store(&req.target, true).await,
+        Err(e) => error(StatusCode::BAD_REQUEST, e),
+    }
+}
+
+/// Records a dead cached link: a probe or playback failed on it even
+/// after a refresh. Books the ledger backoff; never resolves.
+async fn handle_dead(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
+    match decode(&body) {
+        Ok(req) => match d.cache.record_failure(&req.target, SystemTime::now()) {
+            Ok(()) => StatusCode::NO_CONTENT.into_response(),
+            Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
+        },
         Err(e) => error(StatusCode::BAD_REQUEST, e),
     }
 }

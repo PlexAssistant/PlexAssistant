@@ -122,31 +122,43 @@ pub async fn run(args: Args) -> CliResult {
         runtime_sock: Some(flags.runtime_sock).filter(|s| !s.as_os_str().is_empty()),
     };
     let mut db = Db::open(&flags.library_db)?;
+    // one refresh budget per target for the whole run
+    let mut refreshed = std::collections::HashSet::new();
     if flags.item > 0 {
-        analyze_one(&mut db, flags.item, &opts).await
+        analyze_one(&mut db, flags.item, &opts, &mut refreshed).await
     } else {
-        analyze_section(&mut db, flags.section, &opts).await
+        analyze_section(&mut db, flags.section, &opts, &mut refreshed).await
     }
 }
 
-async fn analyze_one(db: &mut Db, item: i64, opts: &Options) -> CliResult {
+async fn analyze_one(
+    db: &mut Db,
+    item: i64,
+    opts: &Options,
+    refreshed: &mut std::collections::HashSet<String>,
+) -> CliResult {
     let parts = db.parts_by_item(item)?;
     if !parts.iter().any(|p| is_strm(&p.file)) {
         return Err(exec_original().into()); // local media: keep the official path
     }
-    let n = scanner::analyze_item(db, item, opts).await?;
+    let n = scanner::analyze_item(db, item, opts, refreshed).await?;
     println!("item {item}: analyzed {n} strm part(s)");
     Ok(0)
 }
 
-async fn analyze_section(db: &mut Db, section: i64, opts: &Options) -> CliResult {
+async fn analyze_section(
+    db: &mut Db,
+    section: i64,
+    opts: &Options,
+    refreshed: &mut std::collections::HashSet<String>,
+) -> CliResult {
     let ids = db.items_by_section(section)?;
     for &id in &ids {
         let parts = db.parts_by_item(id)?;
         if !parts.iter().any(|p| is_strm(&p.file)) {
             continue;
         }
-        if let Err(e) = scanner::analyze_item(db, id, opts).await {
+        if let Err(e) = scanner::analyze_item(db, id, opts, refreshed).await {
             println!("item {id}: {e}");
         }
     }

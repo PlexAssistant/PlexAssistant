@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::linkres::{self, Link};
 use crate::plexdb::{Db, WriteError};
 use crate::runtime::Client;
 
-use super::probe::probe;
+use super::probe::{ProbeError, ProbeResult, probe};
 use super::spec::build_spec;
 
 /// Configures one analysis run.
@@ -36,10 +37,14 @@ pub fn is_strm(file: &str) -> bool {
 /// Runs the pipeline for every strm part of one metadata item: resolve the
 /// direct link, probe it, write the results. Non-strm parts and failures
 /// are skipped without aborting the run; only a failed write stops it.
+/// `refreshed` dedups link refreshes across the whole section run: every
+/// target gets at most one fresh link per round, no matter how many parts
+/// point at it.
 pub async fn analyze_item(
     db: &mut Db,
     item_id: i64,
     opts: &Options,
+    refreshed: &mut HashSet<String>,
 ) -> Result<usize, AnalyzeError> {
     let parts = db.parts_by_item(item_id)?;
     let mut analyzed = 0;
@@ -58,12 +63,10 @@ pub async fn analyze_item(
             println!("item {item_id} part {}: resolve failed", part.id);
             continue;
         };
-        let probed = match probe(&opts.ffprobe, &link.url, &opts.user_agent).await {
-            Ok(probed) => probed,
-            Err(e) => {
-                println!("item {item_id} part {}: probe: {e}", part.id);
-                continue;
-            }
+        let Some((probed, link)) =
+            probe_and_heal(&link, &target.value, opts, refreshed, item_id, part.id).await
+        else {
+            continue;
         };
         db.update_media(&build_spec(part, &probed, &link))
             .map_err(|source| AnalyzeError::Write {
@@ -76,9 +79,63 @@ pub async fn analyze_item(
     Ok(analyzed)
 }
 
+/// Probes the resolved link. A dead one (upstream 4xx) gets a single
+/// deduped refresh per run — bounded by the number of distinct targets,
+/// never by the number of items — and a target that stays dead is booked
+/// into the ledger so later rounds back off instead of re-probing.
+async fn probe_and_heal(
+    link: &Link,
+    target: &str,
+    opts: &Options,
+    refreshed: &mut HashSet<String>,
+    item: i64,
+    part: i64,
+) -> Option<(ProbeResult, Link)> {
+    match probe(&opts.ffprobe, &link.url, &opts.user_agent).await {
+        Ok(probed) => Some((probed, link.clone())),
+        Err(e) if is_dead_link(&e) => {
+            if !refreshed.insert(target.to_owned()) {
+                report_dead(target, opts).await;
+                println!("item {item} part {part}: dead target, backing off");
+                return None;
+            }
+            let fresh = match refresh_link(target, opts).await {
+                Some(fresh) => fresh,
+                None => {
+                    // the daemon already booked the failed resolve
+                    println!("item {item} part {part}: refresh failed");
+                    return None;
+                }
+            };
+            match probe(&opts.ffprobe, &fresh.url, &opts.user_agent).await {
+                Ok(probed) => {
+                    println!("item {item} part {part}: healed a dead link");
+                    Some((probed, fresh))
+                }
+                Err(e) => {
+                    report_dead(target, opts).await;
+                    println!("item {item} part {part}: still dead after refresh: {e}");
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            println!("item {item} part {part}: probe: {e}");
+            None
+        }
+    }
+}
+
+/// ffprobe reports upstream 4xx as "Server returned 4XX Client Error"
+/// or "Server returned 403 Forbidden"; anything else (bad binary,
+/// timeout, broken output) is not a dead link and must not refresh.
+fn is_dead_link(e: &ProbeError) -> bool {
+    matches!(e, ProbeError::Failed(msg)
+        if msg.contains("Server returned 4") || msg.contains("HTTP error 4"))
+}
+
 /// Asks the daemon first (its persistent cache saves upstream
-/// resolutions), falling back to resolving directly. Analysis never
-/// refreshes a dead link; that is reserved for playback.
+/// resolutions), falling back to resolving directly.
 async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
     if let Some(sock) = &opts.runtime_sock
         && let Ok(client) = Client::new(sock)
@@ -91,6 +148,31 @@ async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
         });
     }
     linkres::resolve(target, &opts.user_agent).await.ok()
+}
+
+/// The scan-side heal: same shape as resolve_link but forcing a fresh
+/// link, deduped per target by the caller.
+async fn refresh_link(target: &str, opts: &Options) -> Option<Link> {
+    if let Some(sock) = &opts.runtime_sock
+        && let Ok(client) = Client::new(sock)
+        && let Ok(res) = client.refresh(target).await
+    {
+        return Some(Link {
+            url: res.direct,
+            expires_at: res.expires_at,
+            ..Default::default()
+        });
+    }
+    linkres::resolve(target, &opts.user_agent).await.ok()
+}
+
+/// Books a persistently dead target into the daemon's ledger.
+async fn report_dead(target: &str, opts: &Options) {
+    if let Some(sock) = &opts.runtime_sock
+        && let Ok(client) = Client::new(sock)
+    {
+        let _ = client.dead(target).await;
+    }
 }
 
 #[cfg(test)]
@@ -207,7 +289,7 @@ mod tests {
             runtime_sock: None,
         };
 
-        assert_eq!(analyze_item(&mut db, 42, &opts).await.unwrap(), 1);
+        assert_eq!(analyze_item(&mut db, 42, &opts, &mut Default::default()).await.unwrap(), 1);
         assert_eq!(written_items(dir.path()), [(100, "h264".into())]);
     }
 
@@ -246,7 +328,7 @@ mod tests {
             runtime_sock: Some(sock),
         };
 
-        assert_eq!(analyze_item(&mut db, 42, &opts).await.unwrap(), 1);
+        assert_eq!(analyze_item(&mut db, 42, &opts, &mut Default::default()).await.unwrap(), 1);
         assert_eq!(
             std::fs::read_to_string(probed_url).unwrap().trim(),
             "http://cached/dl/ep1"
@@ -264,8 +346,76 @@ mod tests {
             ffprobe: fake_ffprobe(&dir, "echo boom >&2; exit 1"),
             ..Default::default()
         };
-        assert_eq!(analyze_item(&mut db, 42, &opts).await.unwrap(), 0);
+        assert_eq!(analyze_item(&mut db, 42, &opts, &mut Default::default()).await.unwrap(), 0);
         assert!(written_items(dir.path()).is_empty());
+    }
+
+    /// A cached dead link heals within the same run: one deduped refresh
+    /// per target, however many parts point at it.
+    #[tokio::test]
+    async fn dead_cache_link_heals_within_the_run() {
+        // upstream signs fresh links under /dl/fresh-*
+        let app = Router::new()
+            .route(
+                "/file/{id}",
+                get(|UrlPath(id): UrlPath<String>| async move {
+                    (StatusCode::FOUND, [(header::LOCATION, format!("/dl/fresh-{id}"))])
+                }),
+            )
+            .route(
+                "/dl/{id}",
+                get(|| async {
+                    (
+                        StatusCode::PARTIAL_CONTENT,
+                        [(header::CONTENT_RANGE, "bytes 0-0/10")],
+                        "0",
+                    )
+                        .into_response()
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let dir = tempfile::tempdir().unwrap();
+        // ffprobe answers only fresh links; a stale one reports upstream 4xx
+        let ffprobe = fake_ffprobe(
+            &dir,
+            &format!(
+                "for a; do case \"$a\" in *fresh*) cat <<'JSON'\n{SAMPLE_PROBE_JSON}\nJSON\nexit 0;; esac; done\n\
+                 echo 'Server returned 4XX Client Error' >&2; exit 1"
+            ),
+        );
+        let target = format!("{base}/file/ep1");
+        let s1 = dir.path().join("a.strm");
+        let s2 = dir.path().join("b.strm");
+        std::fs::write(&s1, &target).unwrap();
+        std::fs::write(&s2, &target).unwrap();
+        let mut db = library(dir.path(), &[&s1, &s2]);
+
+        // the daemon's cache holds a stale link for the target
+        let cache = Cache::open(dir.path().join("cache.db")).unwrap();
+        cache
+            .put(&Entry {
+                target: target.clone(),
+                direct: format!("{base}/dl/stale"),
+                ..Default::default()
+            })
+            .unwrap();
+        let sock = dir.path().join("assistant.sock");
+        let dlistener = tokio::net::UnixListener::bind(&sock).unwrap();
+        let daemon = Daemon::new(Arc::new(cache), "", 30);
+        tokio::spawn(async move { axum::serve(dlistener, daemon.router()).await.unwrap() });
+
+        let opts = Options {
+            ffprobe,
+            runtime_sock: Some(sock),
+            ..Default::default()
+        };
+        let mut refreshed = HashSet::new();
+        assert_eq!(analyze_item(&mut db, 42, &opts, &mut refreshed).await.unwrap(), 2);
+        assert_eq!(refreshed.len(), 1, "one refresh per target");
+        assert_eq!(written_items(dir.path()).len(), 2);
     }
 
     #[tokio::test]
@@ -283,7 +433,7 @@ mod tests {
             ffprobe: fake_ffprobe(&dir, &format!("cat <<'JSON'\n{SAMPLE_PROBE_JSON}\nJSON")),
             ..Default::default()
         };
-        let err = analyze_item(&mut db, 42, &opts).await.unwrap_err();
+        let err = analyze_item(&mut db, 42, &opts, &mut Default::default()).await.unwrap_err();
         assert_eq!(
             err.to_string(),
             "item 42 part 1000: write: schema \"9\" not on the write whitelist"
