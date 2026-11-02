@@ -147,6 +147,18 @@ fn matches_plex_analysis() {
         d.int("part.duration", spec.duration_ms, &f.part["duration"]);
 
         // pair rows by ffprobe index; Plex skips data tracks entirely
+        for ours in &spec.streams {
+            if !f
+                .streams
+                .iter()
+                .any(|p| p["index"].as_i64() == Some(ours.index))
+            {
+                d.push(
+                    "stream",
+                    format!("{}: stream {} not in Plex", f.name, ours.index),
+                );
+            }
+        }
         for plex in &f.streams {
             let Some(ours) = spec
                 .streams
