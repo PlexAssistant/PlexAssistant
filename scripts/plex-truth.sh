@@ -5,7 +5,8 @@
 # ffprobe output (from the image's own ffprobe) and the rows Plex wrote.
 #
 # Usage: plex-truth.sh [fixtures-root] [plex-image]
-# Needs docker, ffmpeg (with x264/x265/svt-av1/vpx/theora/xvid), jq.
+# Needs docker, ffmpeg (with x264/x265/svt-av1/vpx/theora/xvid), jq, and
+# rsync for the bitmap subtitle samples.
 set -euo pipefail
 
 mkdir -p "${1:-tests/fixtures}"
@@ -15,10 +16,10 @@ WORK="$(mktemp -d)"
 NAME="plex-truth-$$"
 DB="/config/Library/Application Support/Plex Media Server/Plug-in Support/Databases/com.plexapp.plugins.library.db"
 cleanup() {
-  # Plex's files may belong to a uid the host user cannot delete (rootless
-  # podman), so empty the config from inside the container first
-  docker exec "$NAME" rm -rf /config/Library >/dev/null 2>&1 || true
   docker rm -f "$NAME" >/dev/null 2>&1 || true
+  # Plex's files may belong to a uid the host user cannot delete (rootless
+  # podman), so remove them from a throwaway container once Plex is gone
+  docker run --rm --entrypoint rm -v "$WORK:/w" "$IMAGE" -rf /w/config >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -73,6 +74,16 @@ ff $SD $TONE -filter_complex "[1:a]asplit=5[a][b][c][d][e]" -map 0:v -map "[a]" 
 ff $SD $TONE -filter_complex "[1:a]pan=7.1(wide-side)|c0=c0|c1=c0|c2=c0|c3=c0|c4=c0|c5=c0|c6=c0|c7=c0[a8]" -map 0:v -map "[a8]" \
   -c:v libx264 -preset ultrafast -c:a pcm_s16le media/pcm_widelayout.mov
 }
+# ffmpeg cannot encode bitmap subtitles: mux FFmpeg's FATE samples
+FATE=rsync://fate-suite.ffmpeg.org/fate-suite/sub
+mkdir -p fate
+if rsync -q "$FATE/pgs_sub.sup" "$FATE/vobsub.idx" "$FATE/vobsub.sub" fate/; then
+  # shellcheck disable=SC2086
+  ff $SD $TONE -i fate/pgs_sub.sup -i fate/vobsub.idx -map 0:v -map 1:a -map 2 -map 3 \
+    -c:v libx264 -preset ultrafast -c:a aac -c:s copy media/bitmap_subs.mkv
+else
+  echo "FATE samples unavailable, skipping bitmap subtitles" >&2
+fi
 COUNT=$(find media -type f | wc -l)
 
 echo "starting $IMAGE"
