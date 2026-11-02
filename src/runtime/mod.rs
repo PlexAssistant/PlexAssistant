@@ -7,5 +7,8 @@
 mod breaker;
 mod cache;
 mod ledger;
+// TODO(daemon): drop the allow once the daemon wires the quota in
+#[allow(dead_code)]
+mod quota;
 
 pub use cache::{Cache, Entry, OpenError, Stats};
