@@ -1,9 +1,9 @@
 services:
-  fakecloud:
+  strmock:
     build:
       context: .
-      target: fakecloud
-    image: plexassistant-fakecloud:dev
+      target: strmock
+    image: plexassistant-strmock:dev
     command: ["--addr", ":8399", "--root", "/media"]
     volumes:
       - ./testdata/media:/media:ro
