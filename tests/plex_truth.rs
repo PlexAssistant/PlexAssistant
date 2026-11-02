@@ -133,6 +133,23 @@ impl Diff<'_> {
         }
     }
 
+    /// Compares two extra_data JSON objects, ignoring some keys.
+    fn json(&mut self, at: &str, ours: &str, plex: &Value, ignore: &[&str]) {
+        let parse = |s: &str| -> serde_json::Map<String, Value> {
+            let mut map: serde_json::Map<String, Value> =
+                serde_json::from_str(s).unwrap_or_default();
+            map.retain(|k, _| !ignore.contains(&k.as_str()));
+            map
+        };
+        let (ours, plex) = (parse(ours), parse(plex.as_str().unwrap_or("")));
+        if ours != plex {
+            self.push(
+                at,
+                format!("{}: {at}: ours {ours:?} != plex {plex:?}", self.fixture),
+            );
+        }
+    }
+
     fn text(&mut self, at: &str, ours: &str, plex: &Value) {
         let plex = plex.as_str().unwrap_or("");
         if ours != plex {
@@ -177,6 +194,16 @@ fn matches_plex_analysis() {
             &item["frames_per_second"],
         );
         d.text("item.color_trc", &spec.color_trc, &item["color_trc"]);
+        d.text("item.extra_data", &spec.item_extra, &item["extra_data"]);
+        // Plex's ma:optimizedForStreaming (MP4/MOV) is not predictable from
+        // ffprobe: 0 for the two files with PCM audio, 1 for the others,
+        // with the moov box at the end in all of them
+        d.json(
+            "part.extra_data",
+            &spec.part_extra,
+            &f.part["extra_data"],
+            &["url", "ma:optimizedForStreaming"],
+        );
         d.int("part.size", spec.size, &f.part["size"]);
         d.int("part.duration", spec.duration_ms, &f.part["duration"]);
 
