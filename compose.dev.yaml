@@ -1,10 +1,11 @@
 services:
   fakecloud:
-    image: golang:1.26-alpine
-    working_dir: /src
-    command: go run ./cmd/fakecloud -addr :8399 -root /media
+    build:
+      context: .
+      target: fakecloud
+    image: plexassistant-fakecloud:dev
+    command: ["--addr", ":8399", "--root", "/media"]
     volumes:
-      - .:/src
       - ./testdata/media:/media:ro
     ports:
       - "127.0.0.1:8399:8399"

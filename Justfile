@@ -2,23 +2,20 @@ default:
     @just --list
 
 build:
-    go build -o assistant ./cmd/assistant
+    cargo build --release
 
-build-linux:
-    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o dist/assistant-linux-arm64 ./cmd/assistant
+# static linux binary for the rig, from the image's build stage
+build-linux arch="arm64":
+    docker build --platform linux/{{arch}} --target dist -o dist .
 
 test:
-    go test ./...
-
-vet:
-    go vet ./...
+    cargo test
 
 lint:
-    golangci-lint run
+    cargo clippy --all-targets -- -D warnings
 
 fmt:
-    goimports -w .
-    go mod tidy
+    cargo fmt
 
 image:
     docker build -t plexassistant:dev .
@@ -30,7 +27,7 @@ gen-bulk count="500" base="http://fakecloud:8399" out="testdata":
     ./scripts/gen-bulk-strm.sh {{count}} {{base}} {{out}}
 
 rig-up: build-linux
-    docker compose -f compose.dev.yaml up -d
+    docker compose -f compose.dev.yaml up -d --build
 
 rig-down:
     docker compose -f compose.dev.yaml down

@@ -1,15 +1,31 @@
 # syntax=docker/dockerfile:1
 # Release image: build the assistant, bake it into linuxserver/plex
 # with the s6 services. Works for any platform via buildx.
-FROM golang:1.26 AS build
+#
+# Other targets:
+#   dist       the static binary alone (just build-linux)
+#   fakecloud  the test rig's fake cloud drive (compose.dev.yaml)
+FROM rust:1.99-alpine AS build
+RUN apk add --no-cache build-base
 WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build \
-    -ldflags "-X github.com/PlexAssistant/PlexAssistant/internal/cli.Version=${VERSION}" \
-    -o /out/assistant ./cmd/assistant
+ENV ASSISTANT_VERSION=${VERSION}
+# musl static binaries, so they run in any container like the Go build did
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --locked --bins && \
+    mkdir -p /out && cp target/release/assistant target/release/fakecloud /out/
+
+FROM scratch AS dist
+ARG TARGETARCH
+COPY --from=build /out/assistant /assistant-linux-${TARGETARCH}
+
+FROM scratch AS fakecloud
+COPY --from=build /out/fakecloud /fakecloud
+EXPOSE 8399
+ENTRYPOINT ["/fakecloud"]
 
 FROM lscr.io/linuxserver/plex:latest
 RUN apt-get update && \
