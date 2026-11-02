@@ -86,6 +86,14 @@ pub struct Format {
     pub duration: String,
     pub bit_rate: String,
     pub size: String,
+    pub tags: FormatTags,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct FormatTags {
+    /// ISO BMFF brand: "qt  " for QuickTime .mov, "isom"/"mp42"/... for MP4
+    pub major_brand: String,
 }
 
 /// One ffprobe stream entry.

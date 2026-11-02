@@ -131,6 +131,7 @@ fn matches_plex_analysis() {
         d.int("item.height", spec.height, &item["height"]);
         d.int("item.duration", spec.duration_ms, &item["duration"]);
         d.int("item.bitrate", spec.bitrate, &item["bitrate"]);
+        d.text("item.container", &spec.container, &item["container"]);
         d.text("item.video_codec", &spec.video_codec, &item["video_codec"]);
         d.float(
             "item.display_aspect_ratio",
@@ -175,6 +176,7 @@ fn matches_plex_analysis() {
             d.int(&at("index"), ours.index, &plex["index"]);
             d.int(&at("stream_type_id"), ours.type_id, &plex["stream_type_id"]);
             d.text(&at("language"), &ours.language, &plex["language"]);
+            d.text(&at("codec"), &ours.codec, &plex["codec"]);
             let channels = if plex["channels"].is_null() {
                 0
             } else {
