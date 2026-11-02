@@ -3,6 +3,8 @@
 
 mod analyze;
 mod extra;
+mod lang;
+mod lang_table;
 mod parse;
 mod probe;
 mod spec;
