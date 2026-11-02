@@ -6,6 +6,7 @@
 
 mod install;
 mod runtime;
+mod scanner;
 mod transcoder;
 
 use std::error::Error;
@@ -31,6 +32,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    Scanner(scanner::Args),
     Transcoder(transcoder::Args),
     Runtime(runtime::Args),
     Install(install::Args),
@@ -75,6 +77,7 @@ pub async fn run() -> i32 {
         Err(e) => e.exit(),
     };
     let result = match cli.command {
+        Command::Scanner(args) => scanner::run(args).await,
         Command::Transcoder(args) => transcoder::run(args, Path::new(&argv0)).await,
         Command::Runtime(args) => runtime::run(args).await,
         Command::Install(args) => install::run(args),
@@ -118,7 +121,7 @@ mod tests {
 
     #[test]
     fn known_commands() {
-        for name in ["transcoder", "runtime", "install"] {
+        for name in ["scanner", "transcoder", "runtime", "install"] {
             assert!(has_command(&[name.into()]), "{name}");
         }
         assert!(!has_command(&["nope".into()]));
