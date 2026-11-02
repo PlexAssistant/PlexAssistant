@@ -11,6 +11,10 @@ pub trait Resolver {
     fn resolve(&self, target: &str) -> impl Future<Output = Option<String>> + Send;
     /// Forces a fresh link (playback hit a dead one).
     fn refresh(&self, target: &str) -> impl Future<Output = Option<String>> + Send;
+    /// Books a target that stayed dead even after a refresh.
+    fn dead(&self, _target: &str) -> impl Future<Output = ()> + Send {
+        async {}
+    }
 }
 
 /// Asks the runtime daemon and falls back to resolving directly when it
@@ -50,6 +54,14 @@ impl Resolver for DaemonResolver {
 
     async fn refresh(&self, target: &str) -> Option<String> {
         self.ask(target, true).await
+    }
+
+    async fn dead(&self, target: &str) {
+        if let Some(sock) = self.sock.as_ref()
+            && let Ok(client) = Client::new(sock)
+        {
+            let _ = client.dead(target).await;
+        }
     }
 }
 
