@@ -19,6 +19,15 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+      # the tag and Cargo.toml must agree before anything is published
+      - name: tag matches Cargo.toml version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          cargo_version="$(grep -m1 '^version' Cargo.toml | sed 's/version *= *"\(.*\)"/\1/')"
+          [ "$tag" = "$cargo_version" ] || {
+            echo "tag v$tag does not match Cargo.toml version $cargo_version" >&2
+            exit 1
+          }
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
