@@ -342,7 +342,38 @@ async fn analyze_one(
     }
     let n = scanner::analyze_item(db, item, opts, refreshed).await?;
     println!("item {item}: analyzed {n} strm part(s)");
+    // A single episode is enough to know its season. Intros need two
+    // episodes to compare, so the season is only visited when it has them;
+    // episodes already booked are not fingerprinted again.
+    if let Some(season) = db.season_of_item(item)? {
+        detect_intros(db, &[season], opts).await;
+    }
     Ok(0)
+}
+
+/// Intro detection for the seasons a scan just touched.
+///
+/// Failures are logged. A season with fewer than two strm episodes, or
+/// one whose episodes are already booked, writes nothing.
+async fn detect_intros(db: &mut Db, seasons: &[i64], opts: &Options) {
+    let ffmpeg = std::env::var("ASSISTANT_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
+    let fpcalc = std::env::var("ASSISTANT_FPCALC").unwrap_or_else(|_| "fpcalc".into());
+    for &season in seasons {
+        match scanner::intro::detect_season_intros(
+            db,
+            season,
+            &ffmpeg,
+            &fpcalc,
+            &opts.user_agent,
+            opts.runtime_sock.as_ref(),
+        )
+        .await
+        {
+            Ok(0) => {}
+            Ok(n) => println!("season {season}: {n} intro marker(s)"),
+            Err(e) => println!("season {season}: intro: {e}"),
+        }
+    }
 }
 
 /// How many items a section scan probes at once. Probing waits on the
@@ -402,6 +433,10 @@ async fn analyze_section(
     }
     if let Err(e) = db.checkpoint() {
         println!("checkpoint: {e}");
+    }
+    match db.seasons_by_section(section) {
+        Ok(seasons) => detect_intros(db, &seasons, opts).await,
+        Err(e) => println!("section {section}: seasons: {e}"),
     }
     println!("section {section}: {} item(s) processed", ids.len());
     Ok(0)
