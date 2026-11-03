@@ -5,7 +5,6 @@ use std::{fs, io};
 
 use rusqlite::{Connection, OptionalExtension, Result, params};
 
-use super::ledger::FAILURES_SCHEMA;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS links (
@@ -67,7 +66,7 @@ impl Cache {
         let conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.execute_batch(SCHEMA)?;
-        conn.execute_batch(FAILURES_SCHEMA)?;
+        super::ledger::ensure_schema(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

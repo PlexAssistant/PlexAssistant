@@ -43,6 +43,18 @@ pub enum ResolveError {
     Http(#[from] reqwest::Error),
 }
 
+impl ResolveError {
+    /// Whether retrying later can succeed.
+    ///
+    /// A URL that does not parse will never parse. An upstream that
+    /// answers 404 or 410 is saying the file is gone, not that the link
+    /// expired. Everything else — a refusal, a stall, a redirect loop —
+    /// can clear on its own.
+    pub fn is_permanent(&self) -> bool {
+        matches!(self, Self::InvalidUrl(_) | Self::Dead | Self::Gone)
+    }
+}
+
 /// A resolved direct link plus what the probe learned.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Link {
@@ -381,6 +393,18 @@ mod tests {
     async fn invalid_url() {
         let err = resolve("not a url", "").await.unwrap_err();
         assert!(matches!(err, ResolveError::InvalidUrl(_)), "{err:?}");
+    }
+
+    #[test]
+    fn permanence() {
+        assert!(ResolveError::Dead.is_permanent());
+        assert!(ResolveError::Gone.is_permanent());
+        assert!(ResolveError::InvalidUrl(url::Url::parse("::").unwrap_err()).is_permanent());
+        // a refusal, a stall, a redirect loop: each can clear on its own
+        assert!(!ResolveError::Forbidden.is_permanent());
+        assert!(!ResolveError::UnexpectedStatus(500).is_permanent());
+        assert!(!ResolveError::TooManyRedirects.is_permanent());
+        assert!(!ResolveError::Timeout(Duration::from_secs(1)).is_permanent());
     }
 
     #[tokio::test]
