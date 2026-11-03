@@ -10,13 +10,21 @@ FROM rust:1.99-alpine AS build
 RUN apk add --no-cache build-base
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
-COPY src ./src
-ARG VERSION=dev
 ARG TARGETPLATFORM
-ENV ASSISTANT_VERSION=${VERSION}
 # musl static binaries, so they run in any container like the Go build did.
+# Dependency layer built from stub mains: its cache key has no version
+# string in it, so a release only recompiles the two project bins on top.
 # target/ is cached per platform so multi-arch builds do not share it; the
 # registry is shared, but locked, since cargo's own lock lives outside it.
+RUN --mount=type=cache,id=cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-target-${TARGETPLATFORM},target=/src/target \
+    mkdir -p src/bin/strmock && \
+    printf 'fn main() {}\n' | tee src/main.rs src/bin/strmock/main.rs >/dev/null && \
+    cargo build --release --locked --bins && \
+    rm -rf src
+COPY src ./src
+ARG VERSION=dev
+ENV ASSISTANT_VERSION=${VERSION}
 RUN --mount=type=cache,id=cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-target-${TARGETPLATFORM},target=/src/target \
     cargo build --release --locked --bins && \
