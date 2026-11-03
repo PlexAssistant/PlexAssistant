@@ -37,6 +37,20 @@ enum Command {
     Runtime(runtime::Args),
     Install(install::Args),
     Intro(IntroArgs),
+    /// Prints the inputs and outputs of the credits-detection model.
+    CreditsProbe(CreditsProbeArgs),
+}
+
+/// Prints the credits model's inputs and outputs. Detection does not
+/// use the result yet; this only checks that the graph loads.
+#[derive(Debug, clap::Args)]
+struct CreditsProbeArgs {
+    /// model file; defaults to the copy under the Plex config root
+    #[arg(long)]
+    model: Option<std::path::PathBuf>,
+    /// Plex config root, used when --model is omitted
+    #[arg(long, default_value = crate::scanner::credits_assets::DEFAULT_CONFIG)]
+    config: std::path::PathBuf,
 }
 
 /// Detects intro markers by cross-comparing audio fingerprints of
@@ -105,11 +119,22 @@ pub async fn run() -> i32 {
         Command::Runtime(args) => runtime::run(args).await,
         Command::Install(args) => install::run(args),
         Command::Intro(args) => run_intro(args).await,
+        Command::CreditsProbe(args) => run_credits_probe(args),
     };
     result.unwrap_or_else(|e| {
         eprintln!("Error: {e}");
         1
     })
+}
+
+/// Loads the credits model and prints its signature.
+fn run_credits_probe(args: CreditsProbeArgs) -> CliResult {
+    let path = args
+        .model
+        .unwrap_or_else(|| crate::scanner::credits_assets::path(&args.config));
+    let signature = crate::scanner::credits_net::signature(&path)?;
+    println!("{signature}");
+    Ok(0)
 }
 
 /// Runs intro detection for a library section.
@@ -163,7 +188,14 @@ mod tests {
 
     #[test]
     fn known_commands() {
-        for name in ["scanner", "transcoder", "runtime", "install"] {
+        for name in [
+            "scanner",
+            "transcoder",
+            "runtime",
+            "install",
+            "intro",
+            "credits-probe",
+        ] {
             assert!(has_command(&[name.into()]), "{name}");
         }
         assert!(!has_command(&["nope".into()]));
