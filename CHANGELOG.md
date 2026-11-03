@@ -4,6 +4,9 @@
 
 ### Added
 
+- Opening an item's detail page analyses a strm that still has no media
+  info. Plex only asks for analysis during a scan, so an item it already
+  considers analysed stayed empty until the next one.
 - A file is recognised by its duration and size, not by the strm URL.
   The same file under another path, another strm, or a re-added item is
   written from the stored analysis instead of being probed again. Intro
