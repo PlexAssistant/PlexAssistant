@@ -40,25 +40,11 @@ async fn cloud() -> String {
 fn library(dir: &Path, files: &[&Path]) -> Db {
     let path = dir.join("lib.db");
     let conn = Connection::open(&path).unwrap();
-    conn.execute_batch(
-        r#"CREATE TABLE schema_migrations (version varchar(255) NOT NULL);
-        INSERT INTO schema_migrations VALUES ('500000000001.231');
-        CREATE TABLE metadata_items (id INTEGER PRIMARY KEY, duration INTEGER);
-        INSERT INTO metadata_items VALUES (42, NULL);
-        CREATE TABLE media_items (id INTEGER PRIMARY KEY, metadata_item_id INTEGER,
-          library_section_id INTEGER,
-          width INTEGER, height INTEGER, size INTEGER, duration INTEGER, bitrate INTEGER,
-          container TEXT, video_codec TEXT, audio_codec TEXT, color_trc TEXT,
-          display_aspect_ratio REAL, frames_per_second REAL, audio_channels INTEGER,
-          display_offset INTEGER, media_analysis_version INTEGER, extra_data TEXT, updated_at INTEGER);
-        CREATE TABLE media_parts (id INTEGER PRIMARY KEY, media_item_id INTEGER,
-          file TEXT, size INTEGER DEFAULT 0, duration INTEGER, extra_data TEXT, updated_at INTEGER);
-        CREATE TABLE media_streams (id INTEGER PRIMARY KEY AUTOINCREMENT,
-          stream_type_id INTEGER, media_item_id INTEGER, media_part_id INTEGER,
-          codec TEXT, language TEXT, "index" INTEGER, channels INTEGER, bitrate INTEGER,
-          "default" INTEGER, forced INTEGER, extra_data TEXT, url TEXT,
-          created_at INTEGER, updated_at INTEGER);"#,
-    )
+    conn.execute_batch(&format!(
+        "{}
+        INSERT INTO metadata_items VALUES (42, NULL);",
+        crate::plexdb::test_schema::LIBRARY
+    ))
     .unwrap();
     for (i, file) in files.iter().enumerate() {
         let media_item = 100 + i as i64;
