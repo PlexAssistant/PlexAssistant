@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::CliResult;
-use crate::linkres::DEFAULT_UA;
+use crate::linkres::{self, DEFAULT_UA};
 use crate::plexdb::{self, Db};
 use crate::runtime::DEFAULT_SOCK;
-use crate::scanner::{self, Options, is_strm};
+use crate::scanner::{self, Options, credits, is_strm};
 
 /// Run as the Plex Scanner replacement. Item and section analyze
 /// invocations run our strm pipeline; every other mode (matcher, credits,
@@ -111,6 +111,11 @@ fn parse_flags(args: &[OsString]) -> Result<ScanFlags, String> {
 }
 
 pub async fn run(args: Args) -> CliResult {
+    // credits detection: Plex invokes "-C -f <file> --creditsTempDataPath …"
+    if let Some(file) = credits_target(&args.args) {
+        return run_credits(&file).await;
+    }
+
     let flags = parse_flags(&args.args)?;
     if !flags.analyze || (flags.item == 0 && flags.section == 0) {
         return Err(exec_original().into());
@@ -129,6 +134,59 @@ pub async fn run(args: Args) -> CliResult {
     } else {
         analyze_section(&mut db, flags.section, &opts, &mut refreshed).await
     }
+}
+
+/// The -f target of a credits-detection invocation, when -C is present.
+fn credits_target(args: &[OsString]) -> Option<OsString> {
+    if !args.iter().any(|a| a == "-C") {
+        return None;
+    }
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        if arg == "-f" {
+            return it.next().cloned();
+        }
+    }
+    None
+}
+
+/// Credits detection for one file: find the item, resolve a strm target
+/// through the daemon, run the black-window heuristic and write the
+/// marker. Local files and unknown paths keep the official path.
+async fn run_credits(file: &OsStr) -> CliResult {
+    let file_str = file.to_string_lossy().into_owned();
+    let opts = Options {
+        ffprobe: std::env::var("ASSISTANT_FFPROBE").unwrap_or_else(|_| "ffprobe".into()),
+        user_agent: DEFAULT_UA.into(),
+        runtime_sock: std::env::var("ASSISTANT_SOCK")
+            .ok()
+            .map(PathBuf::from)
+            .filter(|s| !s.as_os_str().is_empty())
+            .or_else(|| Some(PathBuf::from(DEFAULT_SOCK))),
+    };
+
+    let mut db = Db::open(plexdb::DEFAULT_PATH)?;
+    let Some(item) = db.item_id_by_part_file(&file_str)? else {
+        return Err(exec_original().into());
+    };
+    let target = match linkres::parse_strm(file) {
+        Ok(target) if target.is_remote => target,
+        _ => return Err(exec_original().into()), // local or unreadable: official path
+    };
+
+    let Some(link) = scanner::resolve_link(&target.value, &opts).await else {
+        println!("credits: resolve failed for {file_str}");
+        return Ok(0); // nothing to detect; PMS counts this a success
+    };
+    let ffmpeg = std::env::var("ASSISTANT_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
+    match credits::detect_credits(&ffmpeg, &link.url, &opts.user_agent).await {
+        Some((start, end)) => {
+            db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
+            println!("credits: marker {start}-{end} ms on item {item}");
+        }
+        None => println!("credits: no window found for {file_str}"),
+    }
+    Ok(0)
 }
 
 async fn analyze_one(
