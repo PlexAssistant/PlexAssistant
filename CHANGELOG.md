@@ -8,6 +8,9 @@
   skips an item whose content has not changed, and a marker set by hand
   is not replaced. `assistant marker` lists the rows and can set, retry,
   or stop one.
+- Credits detection reads the box around the text and uses it to move the
+  start and end of a scrolling credit off the two-second sample grid. A
+  credit that stands still is unchanged.
 
 ## [0.3.1] — 2026-11-03
 
