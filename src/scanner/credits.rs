@@ -15,7 +15,7 @@ const MIN_MARKER_SECS: f64 = 15.0;
 /// Only the tail is scanned: credits live at the end, and walking a
 /// whole hour of 4K over a cloud link costs real bandwidth. Measured
 /// measured from what real credits look like.
-const TAIL_WINDOW_SECS: f64 = 600.0;
+pub const TAIL_WINDOW_SECS: f64 = 600.0;
 
 /// Heuristic credits detection: run ffmpeg's blackdetect over the last
 /// ten minutes and pick the last black window of at least 15 seconds as
