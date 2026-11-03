@@ -9,13 +9,15 @@
 # Quick start:
 #   1. Point the /media volume below at your .strm folder
 #   2. Optional: set PLEX_CLAIM from https://plex.tv/claim
-#   3. docker compose up -d --build
+#   3. docker compose up -d
 #   4. Open http://<host>:32400, add a TV library pointing at /media
-#      and let it scan — media info appears automatically.
+#      and let it scan; media info appears automatically.
+#
+# To build the image from this checkout instead, see compose.dev.yaml.
 services:
   plex:
-    build: .
-    image: plexassistant:latest
+    # pin a release with its tag, e.g. :v0.4.5 (see CHANGELOG.md)
+    image: ghcr.io/plexassistant/plexassistant:latest
     environment:
       # run Plex as this host uid/gid (match your file owner)
       - PUID=1000
