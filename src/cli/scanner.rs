@@ -202,17 +202,13 @@ async fn run_credits(file: &OsStr) -> CliResult {
         return Ok(0); // nothing to detect; PMS counts this a success
     };
     let ffmpeg = env_or("ASSISTANT_FFMPEG", "ffmpeg");
-    let duration = input_duration(&opts.ffprobe, &link.url, &opts.user_agent).await;
-    let marker = credits::detect(
-        credits::Detector::from_env(),
-        &ffmpeg,
-        &opts.ffprobe,
-        &link.url,
-        &opts.user_agent,
-        duration,
-    )
-    .await;
-    match marker {
+    // one probe for every detector: each seeks into the tail from it
+    let duration = scanner::probe(&opts.ffprobe, &link.url, &opts.user_agent)
+        .await
+        .map(|p| scanner::duration_ms(&p.format.duration) as f64 / 1000.0)
+        .unwrap_or(0.0);
+    let detector = credits::Detector::from_env();
+    match credits::detect(detector, &ffmpeg, &link.url, &opts.user_agent, duration).await {
         Some((start, end)) => {
             db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
             if let Some(cache) = marker_cache() {
@@ -230,15 +226,6 @@ async fn run_credits(file: &OsStr) -> CliResult {
         None => println!("credits: no window found for {file_str}"),
     }
     Ok(0)
-}
-
-/// Duration in seconds via ffprobe.
-async fn input_duration(ffprobe: &str, input: &str, ua: &str) -> f64 {
-    use scanner::duration_ms;
-    scanner::probe(ffprobe, input, ua)
-        .await
-        .map(|p| duration_ms(&p.format.duration) as f64 / 1000.0)
-        .unwrap_or(0.0)
 }
 
 async fn analyze_one(db: &mut Db, item: i64, opts: &Options) -> CliResult {

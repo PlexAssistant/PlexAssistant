@@ -58,7 +58,6 @@ impl Detector {
 pub async fn detect(
     detector: Detector,
     ffmpeg: &str,
-    ffprobe: &str,
     input: &str,
     ua: &str,
     duration_secs: f64,
@@ -66,7 +65,7 @@ pub async fn detect(
     if detector == Detector::Model {
         return detect_with_graph(ffmpeg, input, ua, duration_secs).await;
     }
-    if let Some(window) = black::detect(ffmpeg, ffprobe, input, ua).await {
+    if let Some(window) = black::detect(ffmpeg, input, ua, duration_secs).await {
         return Some(window);
     }
     if detector == Detector::Auto

@@ -11,6 +11,8 @@
 
 ### Changed
 
+- A credits run probes the file once. The black-window detector used to
+  run its own ffprobe before the other detectors ran theirs.
 - A scan opens the assistant cache once per item instead of once per
   lookup.
 
