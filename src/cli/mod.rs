@@ -1,7 +1,7 @@
 //! Wires the assistant command tree.
 //!
 //! The binary is multi-call: when Plex invokes it through the install-time
-//! symlinks (Scanner / Transcoder), the subcommand is derived from argv[0];
+//! symlinks (Scanner / Transcoder), the subcommand is derived from `argv[0]`;
 //! manual invocations use subcommands directly.
 
 mod credits_probe;

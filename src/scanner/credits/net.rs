@@ -82,7 +82,7 @@ impl Plan {
     ///
     /// The score map is `80×80`. Geometry is `80×80×5`, cell-major, and is
     /// returned flat. [`box_of`] turns one cell of it into a rectangle.
-    /// Callers that only need a window still use [`score`].
+    /// Callers that only need a window still use [`Plan::score`].
     pub fn maps(&self, rgb: &[u8]) -> Result<(Vec<f32>, Vec<f32>), NetError> {
         if rgb.len() != FRAME_BYTES {
             return Err(anyhow!("frame is {} bytes, expected {FRAME_BYTES}", rgb.len()).into());

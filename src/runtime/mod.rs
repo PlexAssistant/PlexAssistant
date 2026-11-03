@@ -2,6 +2,7 @@
 //! Links are trusted until a playback failure reports them dead; expiry
 //! timestamps are stored for information only.
 
+mod api;
 mod breaker;
 mod cache;
 mod client;
@@ -15,9 +16,10 @@ mod tracks;
 mod usage;
 mod watch;
 
+pub use api::{Resolved, TargetRequest};
 pub use cache::{Cache, DEFAULT_CACHE, Entry, OpenError, Stats, cache_path};
 pub use client::{Client, ClientError};
-pub use daemon::{DEFAULT_SOCK, Daemon, Resolved, TargetRequest};
+pub use daemon::{DEFAULT_SOCK, Daemon};
 pub use identity::Identity;
 pub use markers::{MarkerDecision, MarkerOrigin, MarkerRecord, marker_digest};
 pub use parts::PartFailure;
