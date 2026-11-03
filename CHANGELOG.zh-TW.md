@@ -2,6 +2,8 @@
 
 ## [未發布]
 
+## [0.4.4] — 2026-11-03
+
 ### 新增
 
 - 音軌和字幕的選擇按帳號、按劇記住。再次分析一個 part 時,選擇會改指到
@@ -174,6 +176,9 @@
   SQLite 直寫、持久連結快取、雲端硬碟保護(熔斷器、台帳、
   配額)、install/verify/revert 生命週期。
 
+[0.4.4]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.0...v0.3.1
