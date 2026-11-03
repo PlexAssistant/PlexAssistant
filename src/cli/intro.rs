@@ -17,8 +17,6 @@ pub struct Args {
     ffmpeg: String,
     #[arg(long, default_value = "fpcalc")]
     fpcalc: String,
-    #[arg(long, default_value = "ffprobe")]
-    ffprobe: String,
     #[arg(long, default_value = crate::linkres::DEFAULT_UA)]
     ua: String,
     #[arg(long)]
@@ -33,7 +31,6 @@ pub async fn run(args: Args) -> CliResult {
         args.section,
         &args.ffmpeg,
         &args.fpcalc,
-        &args.ffprobe,
         &args.ua,
         args.runtime_sock.as_ref(),
     )

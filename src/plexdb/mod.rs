@@ -44,6 +44,18 @@ pub struct Part {
     pub duration: i64,
 }
 
+impl Part {
+    /// Duration and size, the pair the content and marker ledgers match
+    /// on. Empty for a part that has not been analysed yet, so nothing
+    /// matches it and detection runs.
+    pub fn media_key(&self) -> String {
+        if self.duration <= 0 || self.size <= 0 {
+            return String::new();
+        }
+        format!("d={}\ns={}\n", self.duration, self.size)
+    }
+}
+
 impl Db {
     /// Opens the database with the write-safety busy timeout applied.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -262,6 +274,14 @@ mod tests {
         // a movie in the same section has no season
         assert_eq!(db.seasons_by_section(2).unwrap(), [8]);
         assert!(db.seasons_by_section(3).unwrap().is_empty());
+    }
+
+    #[test]
+    fn media_key_needs_duration_and_size() {
+        let (_dir, db) = fixture("500000000001.231");
+        let parts = db.parts_by_item(42).unwrap();
+        assert_eq!(parts[0].media_key(), "", "no duration yet");
+        assert_eq!(parts[1].media_key(), "d=1200\ns=48\n");
     }
 
     #[test]

@@ -15,6 +15,7 @@
   run its own ffprobe before the other detectors ran theirs.
 - A scan opens the assistant cache once per item instead of once per
   lookup.
+- `assistant intro` no longer takes `--ffprobe`, which it never used.
 
 ## [0.4.5] — 2026-11-03
 

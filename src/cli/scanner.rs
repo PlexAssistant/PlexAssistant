@@ -5,7 +5,7 @@ use std::process::Command;
 
 use super::{CliResult, env_or};
 use crate::linkres::{self, DEFAULT_UA};
-use crate::plexdb::{self, Db};
+use crate::plexdb::{self, Db, Part};
 use crate::runtime::{self, DEFAULT_SOCK};
 use crate::scanner::{self, Options, Refreshed, credits, is_strm};
 
@@ -152,15 +152,9 @@ fn credits_key(db: &Db, item: i64) -> Result<String, rusqlite::Error> {
     let parts = db.parts_by_item(item)?;
     Ok(parts
         .iter()
-        .find(|part| part.duration > 0 && part.size > 0)
-        .map(|part| format!("d={}\ns={}\n", part.duration, part.size))
+        .map(Part::media_key)
+        .find(|key| !key.is_empty())
         .unwrap_or_default())
-}
-
-/// The assistant's own ledger, when its cache can be opened. A missing
-/// cache must not stop detection: the marker is still written to Plex.
-fn marker_cache() -> Option<runtime::Cache> {
-    runtime::Cache::open(runtime::cache_path()).ok()
 }
 
 /// Credits detection for one file: find the item, resolve a strm target
@@ -188,8 +182,11 @@ async fn run_credits(file: &OsStr) -> CliResult {
     // hand-set marker, or a stopped one must not spend a detection run.
     // The key is the part's duration and size, the same pair the content
     // ledger matches on, so a re-added item of the same file still skips.
+    // A missing cache must not stop detection: the marker is still
+    // written to Plex.
     let digest = runtime::marker_digest(&credits_key(&db, item)?);
-    if let Some(cache) = marker_cache()
+    let cache = runtime::Cache::open(runtime::cache_path()).ok();
+    if let Some(cache) = &cache
         && cache.marker_decision(item, plexdb::MARKER_CREDITS, &digest)?
             == runtime::MarkerDecision::Skip
     {
@@ -211,7 +208,7 @@ async fn run_credits(file: &OsStr) -> CliResult {
     match credits::detect(detector, &ffmpeg, &link.url, &opts.user_agent, duration).await {
         Some((start, end)) => {
             db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
-            if let Some(cache) = marker_cache() {
+            if let Some(cache) = &cache {
                 cache.record_marker(
                     item,
                     plexdb::MARKER_CREDITS,
