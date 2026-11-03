@@ -27,6 +27,8 @@ services:
       - VERSION=docker
       # one-time server claim; leave empty if /config is already claimed
       - PLEX_CLAIM=
+      # credits detection: auto (default), heuristic (no model) or model
+      # - ASSISTANT_CREDITS=auto
     volumes:
       # Plex data: database, metadata, the assistant cache — back this up
       - ./config:/config
