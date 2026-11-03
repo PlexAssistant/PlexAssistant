@@ -4,6 +4,7 @@
 mod analyze;
 pub mod credits;
 pub mod credits_assets;
+pub mod credits_choice;
 pub mod credits_detect;
 pub mod credits_model;
 pub mod credits_net;

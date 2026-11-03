@@ -179,41 +179,81 @@ async fn run_credits(file: &OsStr) -> CliResult {
         return Ok(0); // nothing to detect; PMS counts this a success
     };
     let ffmpeg = std::env::var("ASSISTANT_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
-    match credits::detect_credits(&ffmpeg, &opts.ffprobe, &link.url, &opts.user_agent).await {
-        Some((start, end)) => {
-            db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
-            println!("credits: marker {start}-{end} ms on item {item}");
+    let choice = scanner::credits_choice::Detector::parse(
+        std::env::var(scanner::credits_choice::ENV).ok().as_deref(),
+    );
+    let duration = input_duration(&opts.ffprobe, &link.url, &opts.user_agent).await;
+    let marker = match choice {
+        scanner::credits_choice::Detector::Model => {
+            detect_with_graph(&ffmpeg, &link.url, &opts.user_agent, duration).await
         }
-        None => {
-            // no black window; the graph when it is stored, edges otherwise
-            let duration = input_duration(&opts.ffprobe, &link.url, &opts.user_agent).await;
-            if let Some((start, end)) =
-                detect_with_graph(&ffmpeg, &link.url, &opts.user_agent, duration).await
-            {
-                db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
-                println!("credits: marker {start}-{end} ms on item {item}");
-            } else if let Some((start, end)) = scanner::credits_model::detect_credits_visual(
+        scanner::credits_choice::Detector::Heuristic => {
+            detect_heuristic(
                 &ffmpeg,
+                &opts.ffprobe,
                 &link.url,
                 &opts.user_agent,
                 duration,
             )
             .await
-            {
-                db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
-                println!("credits: visual marker {start}-{end} ms on item {item}");
-            } else {
-                println!("credits: no window found for {file_str}");
-            }
         }
+        scanner::credits_choice::Detector::Auto => {
+            detect_auto(
+                &ffmpeg,
+                &opts.ffprobe,
+                &link.url,
+                &opts.user_agent,
+                duration,
+            )
+            .await
+        }
+    };
+    match marker {
+        Some((start, end)) => {
+            db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
+            println!("credits: marker {start}-{end} ms on item {item}");
+        }
+        None => println!("credits: no window found for {file_str}"),
     }
     Ok(0)
+}
+
+/// Black window, then the graph, then edges.
+async fn detect_auto(
+    ffmpeg: &str,
+    ffprobe: &str,
+    input: &str,
+    ua: &str,
+    duration: f64,
+) -> Option<(i64, i64)> {
+    if let Some(window) = credits::detect_credits(ffmpeg, ffprobe, input, ua).await {
+        return Some(window);
+    }
+    if let Some(window) = detect_with_graph(ffmpeg, input, ua, duration).await {
+        return Some(window);
+    }
+    scanner::credits_model::detect_credits_visual(ffmpeg, input, ua, duration).await
+}
+
+/// Black window, then edges. The graph is not loaded.
+async fn detect_heuristic(
+    ffmpeg: &str,
+    ffprobe: &str,
+    input: &str,
+    ua: &str,
+    duration: f64,
+) -> Option<(i64, i64)> {
+    if let Some(window) = credits::detect_credits(ffmpeg, ffprobe, input, ua).await {
+        return Some(window);
+    }
+    scanner::credits_model::detect_credits_visual(ffmpeg, input, ua, duration).await
 }
 
 /// The graph's credits window, when the stored model loads and finds one.
 ///
 /// A missing model, a graph that will not run, or a failed extraction
-/// all return `None`, so the caller falls through to the edge detector.
+/// all return `None`. In `auto` the caller then tries the edge detector;
+/// in `model` a miss writes nothing.
 async fn detect_with_graph(
     ffmpeg: &str,
     input: &str,
