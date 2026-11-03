@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::sync::{Arc, Mutex};
 
 use crate::linkres::{self, Link};
 use crate::plexdb::{Db, WriteError};
@@ -54,21 +55,27 @@ pub fn is_strm(file: &str) -> bool {
     file.to_lowercase().ends_with(".strm")
 }
 
-/// Runs the pipeline for every strm part of one metadata item: resolve the
-/// direct link, probe it, write the results. Non-strm parts and failures
-/// are skipped without aborting the run; only a failed write stops it.
-/// `refreshed` dedups link refreshes across the whole section run: every
-/// target gets at most one fresh link per round, no matter how many parts
-/// point at it.
-pub async fn analyze_item(
-    db: &mut Db,
+/// One part whose probe succeeded and is ready to be written.
+pub struct Probed {
+    part: crate::plexdb::Part,
+    probed: ProbeResult,
+    link: Link,
+}
+
+/// Resolves and probes every strm part of one item, without touching the
+/// database. The library read happens first, so the rest can run alongside
+/// other items; the caller writes the results back on its own connection.
+/// Failures are logged and skipped. `refreshed` dedups link refreshes across
+/// the whole run: every target gets at most one fresh link per round, which
+/// still holds when several items are probed at once.
+pub async fn probe_item(
+    parts: Vec<crate::plexdb::Part>,
     item_id: i64,
     opts: &Options,
-    refreshed: &mut HashSet<String>,
-) -> Result<usize, AnalyzeError> {
-    let parts = db.parts_by_item(item_id)?;
-    let mut analyzed = 0;
-    for part in parts.iter().filter(|p| is_strm(&p.file)) {
+    refreshed: Arc<Mutex<HashSet<String>>>,
+) -> Vec<Probed> {
+    let mut out = Vec::new();
+    for part in parts.into_iter().filter(|p| is_strm(&p.file)) {
         let target = match linkres::parse_strm(&part.file) {
             Ok(target) => target,
             Err(e) => {
@@ -84,19 +91,47 @@ pub async fn analyze_item(
             continue;
         };
         let Some((probed, link)) =
-            probe_and_heal(&link, &target.value, opts, refreshed, item_id, part.id).await
+            probe_and_heal(&link, &target.value, opts, &refreshed, item_id, part.id).await
         else {
             continue;
         };
-        db.update_media(&build_spec(part, &probed, &link))
+        out.push(Probed { part, probed, link });
+    }
+    out
+}
+
+/// Writes the probed parts of one item. A failed write stops the run.
+pub fn write_item(db: &mut Db, item_id: i64, probed: Vec<Probed>) -> Result<usize, AnalyzeError> {
+    for row in &probed {
+        db.update_media(&build_spec(&row.part, &row.probed, &row.link))
             .map_err(|source| AnalyzeError::Write {
                 item: item_id,
-                part: part.id,
+                part: row.part.id,
                 source,
             })?;
-        analyzed += 1;
     }
-    Ok(analyzed)
+    Ok(probed.len())
+}
+
+/// Runs the pipeline for every strm part of one metadata item: resolve the
+/// direct link, probe it, write the results. Non-strm parts and failures
+/// are skipped without aborting the run; only a failed write stops it.
+/// `refreshed` dedups link refreshes across the whole section run: every
+/// target gets at most one fresh link per round, no matter how many parts
+/// point at it.
+pub async fn analyze_item(
+    db: &mut Db,
+    item_id: i64,
+    opts: &Options,
+    refreshed: &mut HashSet<String>,
+) -> Result<usize, AnalyzeError> {
+    let parts = db.parts_by_item(item_id)?;
+    let shared = Arc::new(Mutex::new(std::mem::take(refreshed)));
+    let probed = probe_item(parts, item_id, opts, shared.clone()).await;
+    if let Ok(guard) = shared.lock() {
+        *refreshed = guard.clone();
+    }
+    write_item(db, item_id, probed)
 }
 
 /// Probes the resolved link. A dead one (upstream 4xx) gets a single
@@ -107,14 +142,17 @@ async fn probe_and_heal(
     link: &Link,
     target: &str,
     opts: &Options,
-    refreshed: &mut HashSet<String>,
+    refreshed: &Mutex<HashSet<String>>,
     item: i64,
     part: i64,
 ) -> Option<(ProbeResult, Link)> {
     match probe(&opts.ffprobe, &link.url, &opts.user_agent).await {
         Ok(probed) => Some((probed, link.clone())),
         Err(e) if is_dead_link(&e) => {
-            if !refreshed.insert(target.to_owned()) {
+            let claimed = refreshed
+                .lock()
+                .is_ok_and(|mut set| set.insert(target.to_owned()));
+            if !claimed {
                 report_dead(target, opts).await;
                 println!("item {item} part {part}: dead target, backing off");
                 return None;

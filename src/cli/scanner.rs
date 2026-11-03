@@ -324,6 +324,12 @@ async fn analyze_one(
     Ok(0)
 }
 
+/// How many items a section scan probes at once. Probing waits on the
+/// network, so a few in flight beats one at a time; more than a handful
+/// just crowds the one drive most of a library lives on. Writes stay on
+/// the single library connection and run one item at a time.
+const PROBE_CONCURRENCY: usize = 3;
+
 async fn analyze_section(
     db: &mut Db,
     section: i64,
@@ -331,13 +337,46 @@ async fn analyze_section(
     refreshed: &mut std::collections::HashSet<String>,
 ) -> CliResult {
     let ids = db.items_by_section(section)?;
+    let mut pending = Vec::new();
     for &id in &ids {
         let parts = db.parts_by_item(id)?;
-        if !parts.iter().any(|p| is_strm(&p.file)) {
-            continue;
+        if parts.iter().any(|p| is_strm(&p.file)) {
+            pending.push((id, parts));
         }
-        if let Err(e) = scanner::analyze_item(db, id, opts, refreshed).await {
+    }
+
+    let shared = std::sync::Arc::new(std::sync::Mutex::new(std::mem::take(refreshed)));
+    let mut in_flight = tokio::task::JoinSet::new();
+    let mut rest = pending.into_iter();
+    loop {
+        while in_flight.len() < PROBE_CONCURRENCY
+            && let Some((id, parts)) = rest.next()
+        {
+            let opts = opts.clone();
+            let refreshed = shared.clone();
+            in_flight.spawn(async move {
+                let probed = scanner::probe_item(parts, id, &opts, refreshed).await;
+                (id, probed)
+            });
+        }
+        let Some(joined) = in_flight.join_next().await else {
+            break;
+        };
+        let (id, probed) = match joined {
+            Ok(row) => row,
+            Err(e) => {
+                println!("probe task failed: {e}");
+                continue;
+            }
+        };
+        if let Err(e) = scanner::write_item(db, id, probed) {
             println!("item {id}: {e}");
+        }
+    }
+    if let Ok(guard) = std::sync::Arc::try_unwrap(shared).map(|m| m.into_inner()) {
+        match guard {
+            Ok(seen) => *refreshed = seen,
+            Err(poisoned) => *refreshed = poisoned.into_inner(),
         }
     }
     if let Err(e) = db.checkpoint() {
