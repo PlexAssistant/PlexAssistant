@@ -4,6 +4,10 @@
 
 ### Added
 
+- A strm part that could not be analysed is booked on its own: how many
+  attempts, and whether the failure is permanent or should be left
+  alone. A permanent part is not tried again. The link ledger still
+  covers the URL.
 - Opening an item's detail page analyses a strm that still has no media
   info. Plex only asks for analysis during a scan, so an item it already
   considers analysed stayed empty until the next one.

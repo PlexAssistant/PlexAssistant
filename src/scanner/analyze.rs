@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::linkres::{self, Link};
 use crate::plexdb::{Db, WriteError, WriteSpec};
-use crate::runtime::{Cache, Client, Identity};
+use crate::runtime::{Cache, Client, Identity, PartFailure};
 
 use super::probe::{ProbeError, ProbeResult, probe};
 use super::spec::build_spec;
@@ -82,11 +82,16 @@ pub async fn probe_item(
             Ok(target) => target,
             Err(e) => {
                 println!("item {item_id} part {}: {e}", part.id);
+                note_part(part.id, PartFailure::Permanent, opts);
                 continue;
             }
         };
         if !target.is_remote {
             continue; // local path inside a strm: not ours
+        }
+        if part_is_skipped(part.id, opts) {
+            println!("item {item_id} part {}: skipped", part.id);
+            continue;
         }
         // A part that already carries media info can be recognised before
         // any probe: duration and size are what the content ledger stores.
@@ -99,13 +104,16 @@ pub async fn probe_item(
         }
         let Some(link) = resolve_link(&target.value, opts).await else {
             println!("item {item_id} part {}: resolve failed", part.id);
+            note_part(part.id, PartFailure::Temporary, opts);
             continue;
         };
         let Some((probed, link)) =
             probe_and_heal(&link, &target.value, opts, &refreshed, item_id, part.id).await
         else {
+            note_part(part.id, PartFailure::Temporary, opts);
             continue;
         };
+        clear_part(part.id, opts);
         let spec = remember_probe(&part, &probed, &link, opts);
         out.push(Probed { part, spec });
     }
@@ -152,6 +160,22 @@ fn retarget(mut spec: WriteSpec, part: &crate::plexdb::Part) -> WriteSpec {
     spec.media_item_id = part.media_item_id;
     spec.part_id = part.id;
     spec
+}
+
+fn note_part(part_id: i64, kind: PartFailure, opts: &Options) {
+    if let Some(cache) = open_cache(opts) {
+        let _ = cache.record_part_failure(part_id, kind, std::time::SystemTime::now());
+    }
+}
+
+fn clear_part(part_id: i64, opts: &Options) {
+    if let Some(cache) = open_cache(opts) {
+        let _ = cache.clear_part_failure(part_id);
+    }
+}
+
+fn part_is_skipped(part_id: i64, opts: &Options) -> bool {
+    open_cache(opts).and_then(|cache| cache.part_skipped(part_id).ok()) == Some(true)
 }
 
 fn open_cache(opts: &Options) -> Option<Cache> {
@@ -464,6 +488,60 @@ mod tests {
             1
         );
         assert_eq!(written_items(dir.path()), [(100, "h264".into())]);
+    }
+
+    /// A probe that fails books the part. A permanent booking is not tried
+    /// again; a temporary one is, and a later success clears the row.
+    #[tokio::test]
+    async fn a_failed_part_is_booked() {
+        let base = cloud().await;
+        let dir = tempfile::tempdir().unwrap();
+        let strm = dir.path().join("ep1.strm");
+        std::fs::write(&strm, format!("{base}/file/ep1")).unwrap();
+        let mut db = library(dir.path(), &[&strm]);
+        let cache_path = dir.path().join("cache.db");
+        let opts = Options {
+            ffprobe: fake_ffprobe(&dir, "echo boom >&2; exit 1"),
+            cache: Some(cache_path.clone()),
+            ..Default::default()
+        };
+        assert_eq!(
+            analyze_item(&mut db, 42, &opts, &mut Default::default())
+                .await
+                .unwrap(),
+            0
+        );
+        let cache = Cache::open(&cache_path).unwrap();
+        let row = cache.part_failure(1000).unwrap().unwrap();
+        assert_eq!(row.attempts, 1);
+        assert_eq!(row.kind, crate::runtime::PartFailure::Temporary);
+        drop(cache);
+
+        // the same part, now booked permanent, is not probed again
+        Cache::open(&cache_path)
+            .unwrap()
+            .record_part_failure(
+                1000,
+                crate::runtime::PartFailure::Permanent,
+                std::time::SystemTime::now(),
+            )
+            .unwrap();
+        let calls = dir.path().join("calls");
+        let opts = Options {
+            ffprobe: fake_ffprobe(
+                &dir,
+                &format!("echo probed >> '{}'; exit 1", calls.display()),
+            ),
+            cache: Some(cache_path),
+            ..Default::default()
+        };
+        assert_eq!(
+            analyze_item(&mut db, 42, &opts, &mut Default::default())
+                .await
+                .unwrap(),
+            0
+        );
+        assert!(!calls.exists(), "a permanent part must not be probed");
     }
 
     /// A part that already carries the duration and size of a remembered
