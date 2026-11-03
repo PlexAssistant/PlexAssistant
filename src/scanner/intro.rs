@@ -266,13 +266,30 @@ pub async fn detect_section_intros(
     sock: Option<&PathBuf>,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let seasons = db.seasons_by_section(section_id)?;
+    let mut written = 0;
+    for season_id in seasons {
+        written += detect_season_intros(db, season_id, ffmpeg, fpcalc, ua, sock).await?;
+    }
+    Ok(written)
+}
+
+/// Detects intros for one season. A season with fewer than two strm
+/// episodes writes nothing. Returns the number of markers written.
+pub async fn detect_season_intros(
+    db: &mut Db,
+    season_id: i64,
+    ffmpeg: &str,
+    fpcalc: &str,
+    ua: &str,
+    sock: Option<&PathBuf>,
+) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let tmpdir = tempfile::tempdir().map_err(|e| format!("tmpdir: {e}"))?;
     let mut written = 0;
 
-    for season_id in seasons {
+    {
         let episodes = db.strm_episodes_by_season(season_id)?;
         if episodes.len() < 2 {
-            continue; // need at least two episodes to compare
+            return Ok(0); // need at least two episodes to compare
         }
         println!("season {season_id}: {} strm episode(s)", episodes.len());
 
@@ -301,7 +318,7 @@ pub async fn detect_section_intros(
             }
         }
         if fingerprints.len() < 2 {
-            continue;
+            return Ok(0);
         }
 
         // compare all pairs; each episode collects its own match times

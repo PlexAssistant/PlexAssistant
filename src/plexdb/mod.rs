@@ -128,6 +128,20 @@ impl Db {
         .collect()
     }
 
+    /// The season an episode belongs to, when the item is an episode.
+    pub fn season_of_item(&self, item_id: i64) -> Result<Option<i64>> {
+        let season = self.conn.query_row(
+            "SELECT parent_id FROM metadata_items WHERE id=? AND metadata_type=4",
+            [item_id],
+            |row| row.get(0),
+        );
+        match season {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Returns all season ids (metadata_type=3) in a library section.
     pub fn seasons_by_section(&self, section_id: i64) -> Result<Vec<i64>> {
         let mut stmt = self.conn.prepare_cached(
