@@ -21,8 +21,8 @@ pub struct StreamRow {
     pub extra_data: String,
 }
 
-/// The analyzed media info for one part, shaped exactly like the rows the
-/// official scanner writes (measured against a live Plex).
+/// The analyzed media info for one part, shaped exactly like the rows
+/// Plex's own analysis writes.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WriteSpec {
     pub media_item_id: i64,

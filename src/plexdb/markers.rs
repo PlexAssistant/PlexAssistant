@@ -7,7 +7,7 @@ pub const MARKER_INTRO: i64 = 1;
 pub const MARKER_CREDITS: i64 = 5;
 
 /// The account that owns synthetic settings rows; 1 is the server owner
-/// on every measured install.
+/// on standard installs.
 const OWNER_ACCOUNT: i64 = 1;
 
 impl Db {

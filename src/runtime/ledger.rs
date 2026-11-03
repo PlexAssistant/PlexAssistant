@@ -26,33 +26,36 @@ impl Cache {
         // one lock across read and upsert keeps concurrent counts intact
         let conn = self.conn();
         let previous: Option<i64> = conn
-            .query_row(
-                "SELECT fail_count FROM failures WHERE target_url=?",
-                [target],
-                |r| r.get(0),
-            )
+            .prepare_cached("SELECT fail_count FROM failures WHERE target_url=?")?
+            .query_row([target], |r| r.get(0))
             .optional()?;
         let count = previous.unwrap_or(0) + 1;
         let step = usize::try_from(count - 1)
             .ok()
             .and_then(|i| BACKOFF_STEPS.get(i))
             .unwrap_or(&BACKOFF_STEPS[BACKOFF_STEPS.len() - 1]);
-        conn.execute(
+        conn.prepare_cached(
             "INSERT INTO failures (target_url, fail_count, last_fail, next_retry)
              VALUES (?,?,?,?)
              ON CONFLICT(target_url) DO UPDATE SET
                 fail_count=excluded.fail_count,
                 last_fail=excluded.last_fail,
                 next_retry=excluded.next_retry",
-            params![target, count, unix_seconds(now), unix_seconds(now + *step)],
-        )?;
+        )?
+        .execute(params![
+            target,
+            count,
+            unix_seconds(now),
+            unix_seconds(now + *step)
+        ])?;
         Ok(())
     }
 
     /// Forgets a target after any success.
     pub fn clear_failure(&self, target: &str) -> Result<()> {
         self.conn()
-            .execute("DELETE FROM failures WHERE target_url=?", [target])?;
+            .prepare_cached("DELETE FROM failures WHERE target_url=?")?
+            .execute([target])?;
         Ok(())
     }
 
@@ -60,11 +63,8 @@ impl Cache {
     pub fn should_skip(&self, target: &str, now: SystemTime) -> Result<bool> {
         let next: Option<i64> = self
             .conn()
-            .query_row(
-                "SELECT next_retry FROM failures WHERE target_url=?",
-                [target],
-                |r| r.get(0),
-            )
+            .prepare_cached("SELECT next_retry FROM failures WHERE target_url=?")?
+            .query_row([target], |r| r.get(0))
             .optional()?;
         Ok(next.is_some_and(|next| next > unix_seconds(now)))
     }
@@ -72,7 +72,8 @@ impl Cache {
     /// Reports booked failures for /state.
     pub fn failure_count(&self) -> Result<i64> {
         self.conn()
-            .query_row("SELECT count(*) FROM failures", [], |r| r.get(0))
+            .prepare_cached("SELECT count(*) FROM failures")?
+            .query_row([], |r| r.get(0))
     }
 }
 

@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.2.2] — 2026-11-03
+
+### Fixed
+
+- Visual credits detection ran ffmpeg twice per file: a first pass
+  whose output was discarded, followed by the real padded pass. For
+  network strm targets that doubled the download and decode cost of
+  every credits scan.
+
+### Changed
+
+- ffprobe now passes `-rw_timeout 50000000` (a 50-second read-stall
+  bound): a wedged CDN connection fails in 50 seconds instead of
+  hanging until the outer two-minute process timeout.
+- ffprobe's protocol whitelist gains `crypto` and `httpproxy` (some
+  CDNs with signed query strings fail the handshake without
+  `crypto`).
+- Log hygiene: URLs echoed by ffmpeg/ffprobe errors and stderr tails
+  are printed with their query strings stripped, so CDN tokens no
+  longer reach the scanner logs.
+- The Plex schema gate now matches the `schema_migrations` major
+  version only: Plex bugfix migrations (e.g. `.232`) no longer
+  disable writes. A different major still refuses to write.
+
+### Security
+
+- The runtime daemon's unix socket is created with explicit `0o660`
+  permissions instead of inheriting the service umask.
+
+### Performance
+
+- The scanner reuses one daemon client per process across item
+  resolutions instead of rebuilding the HTTP client per item.
+- Link cache and dead-link ledger statements go through SQLite's
+  prepared-statement cache.
+
 ## [0.2.1] — 2026-11-03
 
 ### Added
@@ -27,8 +63,8 @@
   labels instead of "Unknown".
 - `assistant intro --section N` command for intro detection.
 - Dev tooling: `strmock` (fake cloud drive with signed links and
-  fault injection), `plex-truth.sh` (fixture capture from a stock
-  Plex), `bin-swap.sh` (binary wrapping for protocol verification).
+  fault injection), `plex-truth.sh` (fixture capture),
+  `bin-swap.sh` (local dev helper).
 
 ### Changed
 

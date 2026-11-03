@@ -13,8 +13,8 @@ pub struct BlackInterval {
 const MIN_MARKER_SECS: f64 = 15.0;
 
 /// Only the tail is scanned: credits live at the end, and walking a
-/// whole hour of 4K over a cloud link costs real bandwidth. Measured
-/// measured from what real credits look like.
+/// whole hour of 4K over a cloud link costs real bandwidth; the window
+/// size follows what real credits look like.
 pub const TAIL_WINDOW_SECS: f64 = 600.0;
 
 /// Heuristic credits detection: run ffmpeg's blackdetect over the last
@@ -76,7 +76,8 @@ pub async fn detect_credits(
         }
     }
     let Some(interval) = best else {
-        let tail: Vec<&str> = log.lines().rev().take(3).collect();
+        // the info-level log echoes the signed input URL; redact it
+        let tail: Vec<String> = log.lines().rev().take(3).map(super::redact_urls).collect();
         eprintln!(
             "credits: no window; ffmpeg exit={:?}, stderr tail: {:?}",
             out.status.code(),
