@@ -6,7 +6,7 @@ use std::process::Command;
 use super::CliResult;
 use crate::linkres::{self, DEFAULT_UA};
 use crate::plexdb::{self, Db};
-use crate::runtime::DEFAULT_SOCK;
+use crate::runtime::{self, DEFAULT_SOCK};
 use crate::scanner::{self, Options, credits, is_strm};
 
 /// Run as the Plex Scanner replacement. Item and section analyze
@@ -150,6 +150,15 @@ fn credits_target(args: &[OsString]) -> Option<OsString> {
     None
 }
 
+/// The assistant's own ledger, when its cache can be opened. A missing
+/// cache must not stop detection: the marker is still written to Plex.
+fn marker_cache() -> Option<runtime::Cache> {
+    let path = std::env::var("ASSISTANT_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/config/assistant/cache.db"));
+    runtime::Cache::open(path).ok()
+}
+
 /// Credits detection for one file: find the item, resolve a strm target
 /// through the daemon, run the black-window heuristic and write the
 /// marker. Local files and unknown paths keep the official path.
@@ -173,6 +182,17 @@ async fn run_credits(file: &OsStr) -> CliResult {
         Ok(target) if target.is_remote => target,
         _ => return Err(exec_original().into()), // local or unreadable: official path
     };
+
+    // The ledger is consulted before resolving: an unchanged file, a
+    // hand-set marker, or a stopped one must not spend a detection run.
+    let digest = runtime::marker_digest(&target.value);
+    if let Some(cache) = marker_cache()
+        && cache.marker_decision(item, plexdb::MARKER_CREDITS, &digest)?
+            == runtime::MarkerDecision::Skip
+    {
+        println!("credits: item {item} unchanged, skipping");
+        return Ok(0);
+    }
 
     let Some(link) = scanner::resolve_link(&target.value, &opts).await else {
         println!("credits: resolve failed for {file_str}");
@@ -211,6 +231,16 @@ async fn run_credits(file: &OsStr) -> CliResult {
     match marker {
         Some((start, end)) => {
             db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
+            if let Some(cache) = marker_cache() {
+                cache.record_marker(
+                    item,
+                    plexdb::MARKER_CREDITS,
+                    start,
+                    end,
+                    &digest,
+                    std::time::SystemTime::now(),
+                )?;
+            }
             println!("credits: marker {start}-{end} ms on item {item}");
         }
         None => println!("credits: no window found for {file_str}"),
