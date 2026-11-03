@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS links (
     expires_at  INTEGER,
     cached_at   INTEGER NOT NULL,
     last_used   INTEGER NOT NULL,
-    hits        INTEGER NOT NULL DEFAULT 0
+    hits        INTEGER NOT NULL DEFAULT 0,
+    size        INTEGER NOT NULL DEFAULT 0
 )";
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -29,6 +30,8 @@ pub struct Entry {
     pub cached_at: i64,
     pub last_used: i64,
     pub hits: i64,
+    /// bytes the resolve learned, 0 when unknown
+    pub size: i64,
 }
 
 /// Cache totals for /state.
@@ -65,11 +68,13 @@ impl Cache {
         let conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.execute_batch(SCHEMA)?;
+        ensure_link_size(&conn)?;
         super::ledger::ensure_schema(&conn)?;
         conn.execute_batch(super::markers::MARKERS_SCHEMA)?;
         conn.execute_batch(super::identity::IDENTITY_SCHEMA)?;
         conn.execute_batch(super::parts::PARTS_SCHEMA)?;
         conn.execute_batch(super::tracks::TRACKS_SCHEMA)?;
+        conn.execute_batch(super::usage::USAGE_SCHEMA)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -87,7 +92,7 @@ impl Cache {
         let entry = conn
             .prepare_cached(
                 "SELECT target_url, direct_url, IFNULL(ua,''), IFNULL(expires_at,0),
-                        cached_at, last_used, hits FROM links WHERE target_url=?",
+                        cached_at, last_used, hits, IFNULL(size,0) FROM links WHERE target_url=?",
             )?
             .query_row([target], |r| {
                 Ok(Entry {
@@ -98,6 +103,7 @@ impl Cache {
                     cached_at: r.get(4)?,
                     last_used: r.get(5)?,
                     hits: r.get(6)?,
+                    size: r.get(7)?,
                 })
             })
             .optional()?;
@@ -123,11 +129,12 @@ impl Cache {
         };
         self.conn()
             .prepare_cached(
-                "INSERT INTO links (target_url, direct_url, ua, expires_at, cached_at, last_used, hits)
-                 VALUES (?,?,?,?,?,?,0)
+                "INSERT INTO links (target_url, direct_url, ua, expires_at, cached_at, last_used, hits, size)
+                 VALUES (?,?,?,?,?,?,0,?)
                  ON CONFLICT(target_url) DO UPDATE SET
                     direct_url=excluded.direct_url, ua=excluded.ua,
-                    expires_at=excluded.expires_at, last_used=excluded.last_used",
+                    expires_at=excluded.expires_at, last_used=excluded.last_used,
+                    size=excluded.size",
             )?
             .execute(params![
                 entry.target,
@@ -135,7 +142,8 @@ impl Cache {
                 entry.ua,
                 entry.expires_at,
                 cached_at,
-                ts
+                ts,
+                entry.size,
             ])?;
         Ok(())
     }
@@ -151,6 +159,21 @@ impl Cache {
                 })
             })
     }
+}
+
+/// Adds `size` to a cache written before that column existed.
+fn ensure_link_size(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(links)")?;
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get(1))?
+        .collect::<Result<_, _>>()?;
+    if !names.iter().any(|name| name == "size") {
+        conn.execute(
+            "ALTER TABLE links ADD COLUMN size INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 fn now() -> i64 {

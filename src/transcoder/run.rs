@@ -51,7 +51,7 @@ async fn run_within(
     // swapped target and retry once: the playback-time self-heal path.
     let mut refreshed = false;
     for swap in &swaps {
-        match res.refresh(&swap.target).await {
+        match res.refresh_at(&swap.target, swap.seek).await {
             Some(fresh) if !fresh.is_empty() && fresh != swap.direct => {
                 rewritten[swap.arg_index] = fresh.into();
                 refreshed = true;
