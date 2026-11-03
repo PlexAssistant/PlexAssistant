@@ -1,6 +1,22 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] — 2026-11-03
+
+### Added
+
+- Credits detection can use the model Plex already stores
+  (`model_v1.pb` under the scanners directory). A frame counts as
+  text when enough of its score cells clear the threshold, and the
+  marker is the longest such run of at least 15 seconds.
+- `ASSISTANT_CREDITS` selects the detector: `auto` (default),
+  `heuristic`, or `model`. `model` writes nothing when the stored
+  file is missing or will not run.
+
+### Changed
+
+- The default credits chain is now black window, then the stored
+  model, then the edge detector. Set `ASSISTANT_CREDITS=heuristic`
+  to keep the 0.2.2 chain.
 
 ### Fixed
 
@@ -114,6 +130,8 @@
   ffprobe, direct SQLite writes, persistent link cache, cloud-drive
   protection (breaker, ledger, quota), install/verify/revert.
 
+[0.3.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/PlexAssistant/PlexAssistant/releases/tag/v0.1.0

@@ -46,4 +46,6 @@ docker compose up -d
 - 沒有 Web 介面。
 - 本地檔案與 strm 混用的媒體庫可以運作,但只有 strm 項目獲得分析。
 - 少數直接播放(direct play)的客戶端可能繞過伺服器端轉碼。
-- 片頭/片尾標記尚未實作。
+- 片頭標記需執行 `assistant intro --section N`。片尾標記在掃描時
+  寫入:黑窗,然後是 Plex 已經存放的模型,最後是邊緣密度。
+  `ASSISTANT_CREDITS` 可選 `auto`(預設)、`heuristic` 或 `model`。
