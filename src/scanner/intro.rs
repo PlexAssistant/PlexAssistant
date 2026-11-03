@@ -351,10 +351,24 @@ async fn resolve(part: &crate::plexdb::Part, ua: &str, sock: Option<&PathBuf>) -
     {
         return Some(res.direct);
     }
-    linkres::resolve(&target.value, ua)
-        .await
-        .ok()
-        .map(|l| l.url)
+    match linkres::resolve(&target.value, ua).await {
+        Ok(link) => Some(link.url),
+        Err(err) => {
+            // the daemon's ledger is the only place a later scan looks,
+            // so a failure here has to be booked or it is retried forever
+            if let Some(sock) = sock
+                && let Ok(client) = Client::new(sock)
+            {
+                let booked = if err.is_permanent() {
+                    client.dead_permanent(&target.value).await
+                } else {
+                    client.dead(&target.value).await
+                };
+                let _ = booked;
+            }
+            None
+        }
+    }
 }
 
 #[cfg(test)]
