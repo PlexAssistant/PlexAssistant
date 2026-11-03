@@ -12,13 +12,21 @@ pub struct BlackInterval {
 /// Minimum marker window Plex honors.
 const MIN_MARKER_SECS: f64 = 15.0;
 
-/// Heuristic credits detection: run ffmpeg's blackdetect over the input
-/// and pick the last black window of at least 15 seconds as the credits.
-/// Misses credits that are not black-background — the visual model is
-/// the follow-up for those.
-pub async fn detect_credits(ffmpeg: &str, input: &str, ua: &str) -> Option<(i64, i64)> {
-    // http options only exist for http inputs; on a local file ffmpeg
-    // rejects them with "Option not found"
+/// Only the tail is scanned: credits live at the end, and walking a
+/// whole hour of 4K over a cloud link costs real bandwidth. Measured
+/// measured from what real credits look like.
+const TAIL_WINDOW_SECS: f64 = 600.0;
+
+/// Heuristic credits detection: run ffmpeg's blackdetect over the last
+/// ten minutes and pick the last black window of at least 15 seconds as
+/// the credits. Misses credits that are not black-background — the
+/// visual model is the follow-up for those.
+pub async fn detect_credits(
+    ffmpeg: &str,
+    ffprobe: &str,
+    input: &str,
+    ua: &str,
+) -> Option<(i64, i64)> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-nostats".into(),
@@ -31,14 +39,22 @@ pub async fn detect_credits(ffmpeg: &str, input: &str, ua: &str) -> Option<(i64,
         args.push("-headers".into());
         args.push(format!("User-Agent: {ua}\r\n"));
     }
+    // seek into the tail when the duration is known
+    if let Some(duration) = input_duration(ffprobe, input, ua).await {
+        let seek = (duration - TAIL_WINDOW_SECS).max(0.0);
+        if seek > 0.0 {
+            args.push("-ss".into());
+            args.push(format!("{seek:.3}"));
+        }
+    }
     args.extend([
         "-i".to_owned(),
         input.to_owned(),
         "-an".into(),
         "-vf".into(),
-        // pic_th tolerates the credits text and stray subtitles/logos:
-        // a frame counts as black when 90% of its pixels are dark
-        "blackdetect=d=2:pix_th=0.10:pic_th=0.90".into(),
+        // 0.5 fps sampling + 320px, matching the
+        // extraction; pic_th tolerates credit text and stray subtitles
+        "fps=0.5,scale=w=320:h=-2,blackdetect=d=2:pix_th=0.10:pic_th=0.90".into(),
         "-f".into(),
         "null".into(),
         "-".into(),
@@ -68,10 +84,23 @@ pub async fn detect_credits(ffmpeg: &str, input: &str, ua: &str) -> Option<(i64,
         );
         return None;
     };
+    // the -ss offset shifts blackdetect timestamps; rebase to the file
+    let base = args
+        .iter()
+        .position(|a| a == "-ss")
+        .map(|i| args[i + 1].parse::<f64>().unwrap_or(0.0))
+        .unwrap_or(0.0);
     Some((
-        (interval.start * 1000.0) as i64,
-        (interval.end * 1000.0) as i64,
+        ((interval.start + base) * 1000.0) as i64,
+        ((interval.end + base) * 1000.0) as i64,
     ))
+}
+
+/// The input's duration in seconds via ffprobe, when it can be had.
+async fn input_duration(ffprobe: &str, input: &str, ua: &str) -> Option<f64> {
+    let probed = super::probe(ffprobe, input, ua).await.ok()?;
+    let ms = super::duration_ms(&probed.format.duration);
+    (ms > 0).then(|| ms as f64 / 1000.0)
 }
 
 /// Parses a blackdetect log line:
@@ -161,7 +190,7 @@ mod tests {
             .status()
             .unwrap();
         assert!(st.success());
-        let marker = detect_credits("ffmpeg", file.to_str().unwrap(), "UA/1").await;
+        let marker = detect_credits("ffmpeg", "ffprobe", file.to_str().unwrap(), "UA/1").await;
         let (start, end) = marker.expect("black credits window found");
         assert!((9_000..=12_000).contains(&start), "start {start}");
         assert!(end >= 38_000, "end {end}");

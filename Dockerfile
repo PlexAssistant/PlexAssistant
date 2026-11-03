@@ -39,14 +39,14 @@ RUN wget -qO ffmpeg.tar.gz "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n
 # swresample/swscale stay: decoders such as opus depend on them, and
 # configure would silently drop those decoders without them. OpenSSL 3
 # (Apache-2.0) needs --enable-version3, which suits this GPL-3.0 project.
-# -w silences the upstream's flood of benign gcc warnings; the version
+# -w silences ffmpeg's flood of benign gcc warnings; the version
 # is checksum-pinned, so there is nothing to read in them for us.
 RUN ./configure \
         --pkg-config-flags=--static --extra-ldflags=-static \
         --extra-cflags=-w \
         --enable-version3 --disable-autodetect --enable-openssl --enable-zlib \
         --disable-everything \
-        --enable-muxer=null --enable-encoder=wrapped_avframe --enable-filter=blackdetect,silencedetect,format \
+        --enable-muxer=null --enable-encoder=wrapped_avframe --enable-filter=blackdetect,silencedetect,format,fps,scale \
         --disable-doc --disable-debug --disable-avdevice \
         --enable-demuxers --enable-parsers --enable-decoders --enable-bsfs \
         --enable-protocol=file,pipe,data,crypto,tcp,tls,http,https,httpproxy && \
