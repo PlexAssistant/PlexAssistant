@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Credits frames are scaled to 320 wide, keeping the picture's height,
+  and padded to the square only when they are scored. Padding inside the
+  scale squeezed a 16:9 picture and left the window on the two-second
+  sample grid. On one synthetic 16:9 clip the padded window was
+  20.0–60.0s and the proportional window was 21.5–58.5s.
+
 ### Added
 
 - Intro detection runs as part of a scan. A season with at least two strm
