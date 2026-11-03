@@ -68,6 +68,7 @@ impl Cache {
         super::ledger::ensure_schema(&conn)?;
         conn.execute_batch(super::markers::MARKERS_SCHEMA)?;
         conn.execute_batch(super::identity::IDENTITY_SCHEMA)?;
+        conn.execute_batch(super::parts::PARTS_SCHEMA)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
