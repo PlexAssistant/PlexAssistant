@@ -122,17 +122,20 @@ fn list(cache: &Cache) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
-/// The digest of the item's strm target, so a hand-set marker compares
-/// against the same content a scan would.
+/// The digest a hand-set marker is booked under.
+///
+/// A part that already has duration and size uses the same pair the
+/// content ledger matches on, so a later scan of the same file sees this
+/// row. A part that has not been analysed yet has nothing stable to hash,
+/// and the marker is booked under an empty key.
 fn digest_of(db: &Db, item: i64) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let parts = db.parts_by_item(item)?;
-    let target = parts
+    let key = parts
         .iter()
-        .find_map(|part| crate::linkres::parse_strm(&part.file).ok())
-        .filter(|target| target.is_remote)
-        .map(|target| target.value)
+        .find(|part| part.duration > 0 && part.size > 0)
+        .map(|part| format!("d={}\ns={}\n", part.duration, part.size))
         .unwrap_or_default();
-    Ok(marker_digest(&target))
+    Ok(marker_digest(&key))
 }
 
 fn kind_id(kind: &str) -> Result<i64, String> {

@@ -125,6 +125,10 @@ pub async fn run(args: Args) -> CliResult {
         ffprobe: flags.ffprobe,
         user_agent: flags.ua,
         runtime_sock: Some(flags.runtime_sock).filter(|s| !s.as_os_str().is_empty()),
+        cache: std::env::var("ASSISTANT_CACHE")
+            .ok()
+            .map(PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty()),
     };
     let mut db = Db::open(&flags.library_db)?;
     // one refresh budget per target for the whole run
@@ -150,6 +154,17 @@ fn credits_target(args: &[OsString]) -> Option<OsString> {
     None
 }
 
+/// Duration and size of the item's first analysed part. Empty when
+/// nothing has been probed yet, so the first credits run always detects.
+fn credits_key(db: &Db, item: i64) -> Result<String, rusqlite::Error> {
+    let parts = db.parts_by_item(item)?;
+    Ok(parts
+        .iter()
+        .find(|part| part.duration > 0 && part.size > 0)
+        .map(|part| format!("d={}\ns={}\n", part.duration, part.size))
+        .unwrap_or_default())
+}
+
 /// The assistant's own ledger, when its cache can be opened. A missing
 /// cache must not stop detection: the marker is still written to Plex.
 fn marker_cache() -> Option<runtime::Cache> {
@@ -172,6 +187,10 @@ async fn run_credits(file: &OsStr) -> CliResult {
             .map(PathBuf::from)
             .filter(|s| !s.as_os_str().is_empty())
             .or_else(|| Some(PathBuf::from(DEFAULT_SOCK))),
+        cache: std::env::var("ASSISTANT_CACHE")
+            .ok()
+            .map(PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty()),
     };
 
     let mut db = Db::open(plexdb::DEFAULT_PATH)?;
@@ -185,7 +204,9 @@ async fn run_credits(file: &OsStr) -> CliResult {
 
     // The ledger is consulted before resolving: an unchanged file, a
     // hand-set marker, or a stopped one must not spend a detection run.
-    let digest = runtime::marker_digest(&target.value);
+    // The key is the part's duration and size, the same pair the content
+    // ledger matches on, so a re-added item of the same file still skips.
+    let digest = runtime::marker_digest(&credits_key(&db, item)?);
     if let Some(cache) = marker_cache()
         && cache.marker_decision(item, plexdb::MARKER_CREDITS, &digest)?
             == runtime::MarkerDecision::Skip

@@ -4,8 +4,8 @@ use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 
 use crate::linkres::{self, Link};
-use crate::plexdb::{Db, WriteError};
-use crate::runtime::Client;
+use crate::plexdb::{Db, WriteError, WriteSpec};
+use crate::runtime::{Cache, Client, Identity};
 
 use super::probe::{ProbeError, ProbeResult, probe};
 use super::spec::build_spec;
@@ -36,6 +36,9 @@ pub struct Options {
     pub user_agent: String,
     /// daemon socket; None or unreachable = resolve directly
     pub runtime_sock: Option<PathBuf>,
+    /// assistant cache; None falls back to `ASSISTANT_CACHE`, then the
+    /// default path inside the container
+    pub cache: Option<PathBuf>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,8 +61,7 @@ pub fn is_strm(file: &str) -> bool {
 /// One part whose probe succeeded and is ready to be written.
 pub struct Probed {
     part: crate::plexdb::Part,
-    probed: ProbeResult,
-    link: Link,
+    spec: WriteSpec,
 }
 
 /// Resolves and probes every strm part of one item, without touching the
@@ -86,6 +88,15 @@ pub async fn probe_item(
         if !target.is_remote {
             continue; // local path inside a strm: not ours
         }
+        // A part that already carries media info can be recognised before
+        // any probe: duration and size are what the content ledger stores.
+        // A hit means this file was probed before, under some other path or
+        // item, and the rows can be copied instead of probed again.
+        if let Some(spec) = reused_spec(&part, opts) {
+            println!("item {item_id} part {}: same content, reusing", part.id);
+            out.push(Probed { part, spec });
+            continue;
+        }
         let Some(link) = resolve_link(&target.value, opts).await else {
             println!("item {item_id} part {}: resolve failed", part.id);
             continue;
@@ -95,15 +106,67 @@ pub async fn probe_item(
         else {
             continue;
         };
-        out.push(Probed { part, probed, link });
+        let spec = remember_probe(&part, &probed, &link, opts);
+        out.push(Probed { part, spec });
     }
     out
+}
+
+/// Turns a fresh probe into the row to write, and remembers it when the
+/// probe has enough stable facts to recognise the file later.
+///
+/// The key is the probe, not the strm path or the signed link. A later
+/// part of the same file — another path, a re-added item, a resigned URL —
+/// finds the row and is written without a second probe only once that
+/// lookup exists. The first sight of a file always probes: nothing stable
+/// is known before ffprobe runs.
+fn remember_probe(
+    part: &crate::plexdb::Part,
+    probed: &ProbeResult,
+    link: &Link,
+    opts: &Options,
+) -> WriteSpec {
+    let spec = build_spec(part, probed, link);
+    if let Some(cache) = open_cache(opts)
+        && let Some(identity) = Identity::from_probe(probed)
+    {
+        let _ = cache.remember_content(&identity.key(), &spec, std::time::SystemTime::now());
+    }
+    spec
+}
+
+/// The analysis already stored for a part whose library row already has
+/// a duration and a size. Parts that have never been analysed return
+/// nothing, and so does a cache that cannot be opened.
+fn reused_spec(part: &crate::plexdb::Part, opts: &Options) -> Option<WriteSpec> {
+    if part.duration <= 0 || part.size <= 0 {
+        return None;
+    }
+    let cache = open_cache(opts)?;
+    let stored = cache.content_for_media(part.duration, part.size).ok()??;
+    Some(retarget(stored.spec, part))
+}
+
+/// Copies a remembered analysis onto another part of the same file.
+fn retarget(mut spec: WriteSpec, part: &crate::plexdb::Part) -> WriteSpec {
+    spec.media_item_id = part.media_item_id;
+    spec.part_id = part.id;
+    spec
+}
+
+fn open_cache(opts: &Options) -> Option<Cache> {
+    let path = opts
+        .cache
+        .clone()
+        .or_else(|| std::env::var("ASSISTANT_CACHE").ok().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("/config/assistant/cache.db"));
+    Cache::open(path).ok()
 }
 
 /// Writes the probed parts of one item. A failed write stops the run.
 pub fn write_item(db: &mut Db, item_id: i64, probed: Vec<Probed>) -> Result<usize, AnalyzeError> {
     for row in &probed {
-        db.update_media(&build_spec(&row.part, &row.probed, &row.link))
+        db.update_media(&row.spec)
             .map_err(|source| AnalyzeError::Write {
                 item: item_id,
                 part: row.part.id,
@@ -391,6 +454,7 @@ mod tests {
             ffprobe: fake_ffprobe(&dir, &format!("cat <<'JSON'\n{SAMPLE_PROBE_JSON}\nJSON")),
             user_agent: linkres::DEFAULT_UA.into(),
             runtime_sock: None,
+            cache: None,
         };
 
         assert_eq!(
@@ -399,6 +463,66 @@ mod tests {
                 .unwrap(),
             1
         );
+        assert_eq!(written_items(dir.path()), [(100, "h264".into())]);
+    }
+
+    /// A part that already carries the duration and size of a remembered
+    /// file is written from the ledger. ffprobe is not invoked.
+    #[tokio::test]
+    async fn known_content_skips_the_probe() {
+        let dir = tempfile::tempdir().unwrap();
+        let strm = dir.path().join("again.strm");
+        std::fs::write(&strm, "http://127.0.0.1:1/file/again").unwrap();
+        let mut db = library(dir.path(), &[&strm]);
+        // the library row already knows what the first probe learned
+        Connection::open(dir.path().join("lib.db"))
+            .unwrap()
+            .execute(
+                "UPDATE media_parts SET size=3757806, duration=20016 WHERE id=1000",
+                [],
+            )
+            .unwrap();
+
+        let cache_path = dir.path().join("cache.db");
+        let cache = Cache::open(&cache_path).unwrap();
+        let probe = serde_json::from_str(SAMPLE_PROBE_JSON).unwrap();
+        let part = crate::plexdb::Part {
+            id: 1,
+            media_item_id: 1,
+            file: "/first.strm".into(),
+            size: 3757806,
+            duration: 20016,
+        };
+        let spec = crate::scanner::build_spec(
+            &part,
+            &probe,
+            &crate::linkres::Link {
+                size: 3757806,
+                ..Default::default()
+            },
+        );
+        let identity = crate::runtime::Identity::from_probe(&probe).unwrap();
+        cache
+            .remember_content(&identity.key(), &spec, std::time::SystemTime::now())
+            .unwrap();
+        drop(cache);
+
+        let calls = dir.path().join("calls");
+        let opts = Options {
+            ffprobe: fake_ffprobe(
+                &dir,
+                &format!("echo probed >> '{}'\nexit 1", calls.display()),
+            ),
+            cache: Some(cache_path),
+            ..Default::default()
+        };
+        assert_eq!(
+            analyze_item(&mut db, 42, &opts, &mut Default::default())
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(!calls.exists(), "a known file must not be probed");
         assert_eq!(written_items(dir.path()), [(100, "h264".into())]);
     }
 
@@ -435,6 +559,7 @@ mod tests {
             ),
             user_agent: linkres::DEFAULT_UA.into(),
             runtime_sock: Some(sock),
+            cache: None,
         };
 
         assert_eq!(
@@ -512,6 +637,7 @@ mod tests {
             ),
             user_agent: linkres::DEFAULT_UA.into(),
             runtime_sock: Some(sock),
+            cache: None,
         };
 
         assert_eq!(
@@ -536,6 +662,7 @@ mod tests {
         let mut db = library(dir.path(), &[&strm]);
         let opts = Options {
             ffprobe: fake_ffprobe(&dir, "echo boom >&2; exit 1"),
+            cache: None,
             ..Default::default()
         };
         assert_eq!(
@@ -610,6 +737,7 @@ mod tests {
         let opts = Options {
             ffprobe,
             runtime_sock: Some(sock),
+            cache: None,
             ..Default::default()
         };
         let mut refreshed = HashSet::new();
@@ -636,6 +764,7 @@ mod tests {
             .unwrap();
         let opts = Options {
             ffprobe: fake_ffprobe(&dir, &format!("cat <<'JSON'\n{SAMPLE_PROBE_JSON}\nJSON")),
+            cache: None,
             ..Default::default()
         };
         let err = analyze_item(&mut db, 42, &opts, &mut Default::default())
