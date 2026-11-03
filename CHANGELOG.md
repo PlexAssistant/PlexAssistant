@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- A resolve that cannot succeed is no longer retried on the dead-link
+  backoff. An unparseable URL, or an upstream that answers 404 or 410,
+  is skipped until a later success clears it. A refusal, a stall, or a
+  redirect loop still backs off for 1/2/4/7 days. A probe that fails
+  for any other reason is booked the same way, instead of being
+  re-probed on every later scan.
+
 ## [0.3.0] — 2026-11-03
 
 ### Added

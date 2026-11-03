@@ -26,11 +26,15 @@ pub const DEFAULT_SOCK: &str = "/run/assistant/assistant.sock";
 
 const QUOTA_WINDOW: Duration = Duration::from_secs(60 * 60);
 
-/// Body of /resolve and /refresh.
+/// Body of /resolve, /refresh and /dead.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TargetRequest {
     #[serde(default)]
     pub target: String,
+    /// Set by /dead when the failure will not clear on its own. Absent
+    /// on older callers, which book the temporary backoff.
+    #[serde(default)]
+    pub permanent: bool,
 }
 
 /// The daemon's answer to /resolve and /refresh.
@@ -105,7 +109,12 @@ impl Daemon {
             Ok(link) => link,
             Err(err) => {
                 self.breakers.record_failure(&domain, Instant::now());
-                if let Err(e) = self.cache.record_failure(target, SystemTime::now()) {
+                let booked = if err.is_permanent() {
+                    self.cache.record_permanent(target, SystemTime::now())
+                } else {
+                    self.cache.record_failure(target, SystemTime::now())
+                };
+                if let Err(e) = booked {
                     return error(StatusCode::INTERNAL_SERVER_ERROR, e);
                 }
                 return error(StatusCode::BAD_GATEWAY, err);
@@ -192,13 +201,21 @@ async fn handle_refresh(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
 }
 
 /// Records a dead cached link: a probe or playback failed on it even
-/// after a refresh. Books the ledger backoff; never resolves.
+/// after a refresh. Books the ledger; never resolves. `permanent`
+/// skips the backoff and is not retried until a success clears it.
 async fn handle_dead(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
     match decode(&body) {
-        Ok(req) => match d.cache.record_failure(&req.target, SystemTime::now()) {
-            Ok(()) => StatusCode::NO_CONTENT.into_response(),
-            Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
-        },
+        Ok(req) => {
+            let booked = if req.permanent {
+                d.cache.record_permanent(&req.target, SystemTime::now())
+            } else {
+                d.cache.record_failure(&req.target, SystemTime::now())
+            };
+            match booked {
+                Ok(()) => StatusCode::NO_CONTENT.into_response(),
+                Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
+            }
+        }
         Err(e) => error(StatusCode::BAD_REQUEST, e),
     }
 }
@@ -278,6 +295,7 @@ mod tests {
     async fn post(base: &str, path: &str, target: &str) -> (StatusCode, String) {
         let body = serde_json::to_string(&TargetRequest {
             target: target.into(),
+            ..Default::default()
         })
         .unwrap();
         let resp = reqwest::Client::new()
@@ -448,11 +466,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dead_target_backs_off() {
+    async fn dead_target_is_not_retried() {
         let upstream =
             spawn(Router::new().route("/file/{id}", get(|| async { StatusCode::NOT_FOUND }))).await;
         let (_dir, cache) = test_cache();
-        let base = spawn(Daemon::new(Arc::new(cache), "", 30).router()).await;
+        let cache = Arc::new(cache);
+        let base = spawn(Daemon::new(Arc::clone(&cache), "", 30).router()).await;
         let target = format!("{upstream}/file/dead");
 
         let (status, body) = post(&base, "/resolve", &target).await;
@@ -460,11 +479,32 @@ mod tests {
             (status, body.as_str()),
             (StatusCode::BAD_GATEWAY, "dead link\n")
         );
+        // a 404 does not clear on its own, so the skip has no expiry
+        let week = SystemTime::now() + Duration::from_secs(8 * 24 * 60 * 60);
+        assert!(cache.should_skip(&target, week).unwrap());
         let (status, body) = post(&base, "/resolve", &target).await;
         assert_eq!(
             (status, body.as_str()),
             (StatusCode::TOO_MANY_REQUESTS, "target backing off\n")
         );
+    }
+
+    /// A refusal can be a signed link the upstream has not accepted yet,
+    /// so it takes the backoff instead of being parked forever.
+    #[tokio::test]
+    async fn forbidden_target_backs_off() {
+        let upstream =
+            spawn(Router::new().route("/file/{id}", get(|| async { StatusCode::FORBIDDEN }))).await;
+        let (_dir, cache) = test_cache();
+        let cache = Arc::new(cache);
+        let base = spawn(Daemon::new(Arc::clone(&cache), "", 30).router()).await;
+        let target = format!("{upstream}/file/nope");
+
+        let (status, _) = post(&base, "/resolve", &target).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(cache.should_skip(&target, SystemTime::now()).unwrap());
+        let later = SystemTime::now() + Duration::from_secs(25 * 60 * 60);
+        assert!(!cache.should_skip(&target, later).unwrap());
     }
 
     #[tokio::test]

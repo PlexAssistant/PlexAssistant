@@ -142,6 +142,9 @@ async fn probe_and_heal(
             }
         }
         Err(e) => {
+            // not a dead link, so no refresh — but it still failed, and
+            // leaving it unbooked re-probes it on every later scan
+            report_dead(target, opts).await;
             // ffprobe errors can echo the signed URL; redact it
             let e = super::redact_urls(&e.to_string());
             println!("item {item} part {part}: probe: {e}");
@@ -163,6 +166,9 @@ fn is_dead_link(e: &ProbeError) -> bool {
 /// its expiry is a guaranteed upstream failure, so it gets one eager
 /// refresh; if that fails, the expired link is still the best we have
 /// and the consumer's failure heal takes over from there.
+///
+/// A direct resolution that fails is booked with the daemon when one is
+/// reachable, so a URL that cannot be parsed is not resolved again.
 pub async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
     if let Some(sock) = &opts.runtime_sock
         && let Some(client) = shared_client(sock)
@@ -183,7 +189,13 @@ pub async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
             })
         });
     }
-    linkres::resolve(target, &opts.user_agent).await.ok()
+    match linkres::resolve(target, &opts.user_agent).await {
+        Ok(link) => Some(link),
+        Err(err) => {
+            report(target, opts, err.is_permanent()).await;
+            None
+        }
+    }
 }
 
 /// Wall-clock unix seconds; 0 on a clock before the epoch.
@@ -211,10 +223,21 @@ async fn refresh_link(target: &str, opts: &Options) -> Option<Link> {
 
 /// Books a persistently dead target into the daemon's ledger.
 async fn report_dead(target: &str, opts: &Options) {
+    report(target, opts, false).await;
+}
+
+/// Books a target. `permanent` is skipped until a success clears it;
+/// anything else takes the growing backoff.
+async fn report(target: &str, opts: &Options, permanent: bool) {
     if let Some(sock) = &opts.runtime_sock
         && let Some(client) = shared_client(sock)
     {
-        let _ = client.dead(target).await;
+        let booked = if permanent {
+            client.dead_permanent(target).await
+        } else {
+            client.dead(target).await
+        };
+        let _ = booked;
     }
 }
 
