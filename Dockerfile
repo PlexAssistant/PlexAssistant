@@ -5,7 +5,7 @@
 # Other targets:
 #   dist         the static binary alone (just build-linux)
 #   strmock      the test rig's fake cloud drive (compose.dev.yaml)
-#   ffprobe-bin  the image's ffprobe alone (scripts/plex-truth.sh)
+#   ffprobe-bin  the image's ffprobe alone (scripts/truth/plex-truth.sh)
 FROM rust:1.99-alpine AS build
 RUN apk add --no-cache build-base
 WORKDIR /src

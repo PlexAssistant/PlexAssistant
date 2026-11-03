@@ -35,8 +35,8 @@ target is resolved once and trusted until it fails. A dead link found
 during a scan gets exactly one refresh per target per round; targets
 that stay dead back off 1/2/4/7 days instead of being re-probed.
 Scan-driven resolutions are bounded by a per-domain circuit breaker
-  and an hourly quota; playback always passes. Reads, bytes and seeks
-  are recorded per domain and per day, apart from that quota.
+and an hourly quota; playback always passes. Reads, bytes and seeks
+are recorded per domain and per day, apart from that quota.
 
 ## Usage
 
