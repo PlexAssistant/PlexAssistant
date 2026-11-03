@@ -45,12 +45,13 @@ RUN ./configure \
         --pkg-config-flags=--static --extra-ldflags=-static \
         --extra-cflags=-w \
         --enable-version3 --disable-autodetect --enable-openssl --enable-zlib \
-        --disable-everything --disable-programs --enable-ffprobe \
-        --disable-doc --disable-debug --disable-avdevice --disable-avfilter \
+        --disable-everything \
+        --enable-muxer=null --enable-encoder=wrapped_avframe --enable-filter=blackdetect,silencedetect,format \
+        --disable-doc --disable-debug --disable-avdevice \
         --enable-demuxers --enable-parsers --enable-decoders --enable-bsfs \
         --enable-protocol=file,pipe,data,crypto,tcp,tls,http,https,httpproxy && \
-    make -j"$(nproc)" ffprobe && \
-    strip ffprobe && mkdir -p /out && cp ffprobe /out/
+    make -j"$(nproc)" ffprobe ffmpeg && \
+    strip ffprobe ffmpeg && mkdir -p /out && cp ffprobe ffmpeg /out/
 
 FROM scratch AS ffprobe-bin
 COPY --from=ffprobe /out/ffprobe /ffprobe
@@ -82,5 +83,5 @@ LABEL org.opencontainers.image.title="PlexAssistant" \
       org.opencontainers.image.ref.name="${VERSION}" \
       org.opencontainers.image.created="${CREATED}"
 COPY packaging/s6-overlay/ /etc/s6-overlay/
-COPY --from=ffprobe /out/ffprobe /usr/local/bin/ffprobe
+COPY --from=ffprobe /out/ffprobe /out/ffmpeg /usr/local/bin/
 COPY --from=build /out/assistant /usr/local/bin/assistant
