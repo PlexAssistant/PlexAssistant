@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-03
+
+### Changed
+
+- A library scan probes three items at once. The results are still written
+  one item at a time, and resolving a link still goes through the daemon's
+  quota.
+
 ## [0.4.0] — 2026-11-03
 
 ### Added
@@ -155,6 +163,7 @@
   ffprobe, direct SQLite writes, persistent link cache, cloud-drive
   protection (breaker, ledger, quota), install/verify/revert.
 
+[0.4.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.2...v0.3.0

@@ -1,5 +1,12 @@
 # 變更日誌
 
+## [0.4.1] — 2026-11-03
+
+### 變更
+
+- 掃描一個媒體庫時同時探測三個項目。結果仍逐個寫入,解析直鏈的
+  請求依舊走 daemon 的配額。
+
 ## [0.4.0] — 2026-11-03
 
 ### 新增
@@ -130,6 +137,7 @@
   SQLite 直寫、持久連結快取、雲端硬碟保護(熔斷器、台帳、
   配額)、install/verify/revert 生命週期。
 
+[0.4.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.2...v0.3.0
