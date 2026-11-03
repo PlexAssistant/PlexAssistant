@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-11-03
+
 ### Changed
 
 - Credits frames are scaled to 320 wide, keeping the picture's height,
@@ -195,6 +197,7 @@
   ffprobe, direct SQLite writes, persistent link cache, cloud-drive
   protection (breaker, ledger, quota), install/verify/revert.
 
+[0.4.3]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.1...v0.4.0
