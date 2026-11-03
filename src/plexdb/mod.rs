@@ -7,8 +7,10 @@ use std::time::Duration;
 
 use rusqlite::{Connection, Result};
 
+mod markers;
 mod write;
 
+pub use markers::{MARKER_CREDITS, MARKER_INTRO};
 pub use write::{StreamRow, WriteError, WriteSpec};
 
 /// The library database inside the Plex container.

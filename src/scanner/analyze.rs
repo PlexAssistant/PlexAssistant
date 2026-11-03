@@ -136,7 +136,7 @@ fn is_dead_link(e: &ProbeError) -> bool {
 
 /// Asks the daemon first (its persistent cache saves upstream
 /// resolutions), falling back to resolving directly.
-async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
+pub async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
     if let Some(sock) = &opts.runtime_sock
         && let Ok(client) = Client::new(sock)
         && let Ok(res) = client.resolve(target).await
