@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Intro detection after a section scan visited every season in the
+  library, not only the seasons of that section.
+
 ## [0.4.5] — 2026-11-03
 
 ### Fixed
