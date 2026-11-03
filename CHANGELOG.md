@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- An audio or subtitle choice is remembered per account and per show.
+  Analysing a part again points the choice at the new stream rows, and a
+  later episode of the same show gets that choice when the account has
+  not picked one there yet. The stream ids from before the rewrite are
+  kept. `assistant tracks restore` puts them back and forgets the choice.
+
 ## [0.4.3] — 2026-11-03
 
 ### Changed

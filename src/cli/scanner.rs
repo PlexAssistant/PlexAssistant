@@ -421,7 +421,7 @@ async fn analyze_section(
                 continue;
             }
         };
-        if let Err(e) = scanner::write_item(db, id, probed) {
+        if let Err(e) = scanner::write_item(db, id, probed, opts) {
             println!("item {id}: {e}");
         }
     }

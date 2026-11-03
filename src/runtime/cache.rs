@@ -69,6 +69,7 @@ impl Cache {
         conn.execute_batch(super::markers::MARKERS_SCHEMA)?;
         conn.execute_batch(super::identity::IDENTITY_SCHEMA)?;
         conn.execute_batch(super::parts::PARTS_SCHEMA)?;
+        conn.execute_batch(super::tracks::TRACKS_SCHEMA)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

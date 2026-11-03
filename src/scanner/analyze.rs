@@ -188,16 +188,123 @@ fn open_cache(opts: &Options) -> Option<Cache> {
 }
 
 /// Writes the probed parts of one item. A failed write stops the run.
-pub fn write_item(db: &mut Db, item_id: i64, probed: Vec<Probed>) -> Result<usize, AnalyzeError> {
+///
+/// A rewrite replaces the stream rows, which drops the ids a saved audio or
+/// subtitle choice pointed at. Those ids are read first and pointed at the
+/// new rows afterwards. A choice already remembered for this account and
+/// show is applied to a part that has none.
+pub fn write_item(
+    db: &mut Db,
+    item_id: i64,
+    probed: Vec<Probed>,
+    opts: &Options,
+) -> Result<usize, AnalyzeError> {
+    let show = db.show_of_item(item_id).ok().flatten();
+    let cache = open_cache(opts);
     for row in &probed {
+        let kept = keep_selections(db, row.part.id);
         db.update_media(&row.spec)
             .map_err(|source| AnalyzeError::Write {
                 item: item_id,
                 part: row.part.id,
                 source,
             })?;
+        retarget_kept(db, row.part.id, show, &kept, cache.as_ref());
+        if let (Some(show), Some(cache)) = (show, cache.as_ref()) {
+            apply_show_choice(db, cache, show, row.part.id, &kept);
+        }
     }
     Ok(probed.len())
+}
+
+/// The selections on a part, named by language and index so they survive
+/// the stream rows being replaced.
+fn keep_selections(db: &Db, part_id: i64) -> Vec<Kept> {
+    let Ok(rows) = db.part_selections(part_id) else {
+        return Vec::new();
+    };
+    rows.into_iter()
+        .map(|row| Kept {
+            account_id: row.account_id,
+            audio: row
+                .audio
+                .and_then(|id| db.track_of_stream(id).ok().flatten()),
+            subtitle: row
+                .subtitle
+                .and_then(|id| db.track_of_stream(id).ok().flatten()),
+            previous_audio: row.audio,
+            previous_subtitle: row.subtitle,
+        })
+        .collect()
+}
+
+struct Kept {
+    account_id: i64,
+    audio: Option<crate::plexdb::TrackChoice>,
+    subtitle: Option<crate::plexdb::TrackChoice>,
+    previous_audio: Option<i64>,
+    previous_subtitle: Option<i64>,
+}
+
+/// Points each saved selection at the stream that replaced it, and remembers
+/// the choice for the show.
+fn retarget_kept(
+    db: &Db,
+    part_id: i64,
+    show: Option<i64>,
+    kept: &[Kept],
+    cache: Option<&crate::runtime::Cache>,
+) {
+    for row in kept {
+        let audio = matched(db, part_id, row.audio.as_ref());
+        let subtitle = matched(db, part_id, row.subtitle.as_ref());
+        let _ = db.retarget_selection(row.account_id, part_id, audio, subtitle);
+        if let (Some(cache), Some(show)) = (cache, show) {
+            let _ = cache.remember_tracks(
+                row.account_id,
+                show,
+                &crate::runtime::ChoiceUpdate {
+                    audio: row.audio.clone(),
+                    subtitle: row.subtitle.clone(),
+                    previous_audio: row.previous_audio,
+                    previous_subtitle: row.previous_subtitle,
+                },
+                std::time::SystemTime::now(),
+            );
+        }
+    }
+}
+
+/// Applies a choice remembered on another episode of this show.
+///
+/// An account that already had a row on this part was retargeted from that
+/// row. This only fills a part the account has not picked on yet.
+fn apply_show_choice(
+    db: &Db,
+    cache: &crate::runtime::Cache,
+    show: i64,
+    part_id: i64,
+    kept: &[Kept],
+) {
+    let already: std::collections::HashSet<i64> = kept.iter().map(|row| row.account_id).collect();
+    let Ok(accounts) = cache.accounts_for_show(show) else {
+        return;
+    };
+    for account in accounts {
+        if already.contains(&account) {
+            continue;
+        }
+        let Ok(Some(remembered)) = cache.track_choice(account, show) else {
+            continue;
+        };
+        let audio = matched(db, part_id, remembered.audio.as_ref());
+        let subtitle = matched(db, part_id, remembered.subtitle.as_ref());
+        let _ = db.apply_remembered(account, part_id, audio, subtitle);
+    }
+}
+
+fn matched(db: &Db, part_id: i64, choice: Option<&crate::plexdb::TrackChoice>) -> Option<i64> {
+    db.match_track(part_id, choice?).ok().flatten()
 }
 
 /// Runs the pipeline for every strm part of one metadata item: resolve the
@@ -218,7 +325,7 @@ pub async fn analyze_item(
     if let Ok(guard) = shared.lock() {
         *refreshed = guard.clone();
     }
-    write_item(db, item_id, probed)
+    write_item(db, item_id, probed, opts)
 }
 
 /// Probes the resolved link. A dead one (upstream 4xx) gets a single
