@@ -1,10 +1,10 @@
-//! Loads the credits-detection graph and reports its inputs and outputs.
+//! Loads the credits-detection graph and scores one frame with it.
 //!
-//! This is the gate before detection uses the graph. A file that parses
-//! is not yet runnable: translation can still fail, and callers stay on
-//! the heuristic until it does not. Nothing here scores a frame.
+//! A file that parses is not yet runnable: translation can still fail,
+//! and callers stay on the heuristic until a plan exists.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use tract_tensorflow::prelude::*;
 use tract_tensorflow::tract_hir::internal::*;
@@ -23,45 +23,74 @@ pub struct Outlet {
     pub fact: String,
 }
 
-/// What the loaded graph accepts and returns, and whether it translated
-/// into a runnable plan.
+/// What the loaded graph accepts and returns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
     pub inputs: Vec<Outlet>,
     pub outputs: Vec<Outlet>,
-    /// `None` once the graph translated into a runnable plan. Otherwise
-    /// the reason it did not, which means detection cannot run it yet.
-    pub optimize_error: Option<String>,
 }
 
-/// Loads `path` and returns the graph's inputs and outputs.
+/// Canvas the graph is fixed to: one 320×320 RGB frame, NHWC.
+pub const CANVAS: usize = 320;
+
+/// Bytes in one canvas frame.
+pub const FRAME_BYTES: usize = CANVAS * CANVAS * 3;
+
+/// A runnable plan, plus the signature of the graph it came from.
+pub struct Plan {
+    plan: Arc<SimplePlan<TypedFact, Box<dyn TypedOp>>>,
+    signature: Signature,
+}
+
+impl std::fmt::Debug for Plan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Plan")
+            .field("signature", &self.signature)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Plan {
+    /// The graph's inputs and outputs.
+    pub fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    /// The share of the score map above `threshold`.
+    ///
+    /// The map is the graph's first output, one score per cell of an
+    /// 80×80 grid. A frame of credit text lifts a handful of those cells
+    /// close to 1; a frame without text leaves all of them near 0.
+    /// `rgb` is one canvas frame, 320×320×3, in source order.
+    pub fn score(&self, rgb: &[u8], threshold: f32) -> Result<f32, NetError> {
+        if rgb.len() != FRAME_BYTES {
+            return Err(anyhow!("frame is {} bytes, expected {FRAME_BYTES}", rgb.len()).into());
+        }
+        let values: Vec<f32> = rgb.iter().map(|byte| f32::from(*byte)).collect();
+        let input = Tensor::from_shape(&[1, CANVAS, CANVAS, 3], &values)?;
+        let outputs = self.plan.run(tvec!(input.into_tvalue()))?;
+        let map = outputs
+            .first()
+            .ok_or_else(|| anyhow!("graph returned no outputs"))?
+            .to_plain_array_view::<f32>()?;
+        let hot = map.iter().filter(|value| **value > threshold).count();
+        Ok(hot as f32 / map.len() as f32)
+    }
+}
+
+/// Loads `path` into a plan that can score a frame.
 ///
-/// A file that parses is a successful load even when it cannot be run.
-/// The error stays on the signature so the caller can see the signature
-/// and still know inference is not available.
-pub fn signature(path: &Path) -> Result<Signature, NetError> {
+/// The optimizer rewrites a convolution bias it cannot reshape, so the
+/// plan is the typed graph itself.
+pub fn load(path: &Path) -> Result<Plan, NetError> {
     let mut loaded = tract_tensorflow::tensorflow().model_for_path(path)?;
     prepare(&mut loaded)?;
-    // The optimizer rewrites a convolution bias it cannot reshape, so a
-    // runnable plan is the typed graph itself.
-    let optimize_error = match loaded.clone().into_typed().and_then(SimplePlan::new) {
-        Ok(plan) => {
-            let inputs = ends_typed(plan.model(), plan.model().input_outlets()?)?;
-            let outputs = ends_typed(plan.model(), plan.model().output_outlets()?)?;
-            return Ok(Signature {
-                inputs,
-                outputs,
-                optimize_error: None,
-            });
-        }
-        Err(err) => Some(format!("{err:#}")),
-    };
-    let inputs = ends(&loaded, loaded.input_outlets()?)?;
-    let outputs = ends(&loaded, loaded.output_outlets()?)?;
-    Ok(Signature {
-        inputs,
-        outputs,
-        optimize_error,
+    let typed = loaded.into_typed()?;
+    let inputs = ends_typed(&typed, typed.input_outlets()?)?;
+    let outputs = ends_typed(&typed, typed.output_outlets()?)?;
+    Ok(Plan {
+        plan: SimplePlan::new(typed)?,
+        signature: Signature { inputs, outputs },
     })
 }
 
@@ -222,17 +251,6 @@ impl Expansion for ResizeBilinear {
     }
 }
 
-fn ends(model: &InferenceModel, ids: &[OutletId]) -> Result<Vec<Outlet>, NetError> {
-    ids.iter()
-        .map(|id| {
-            Ok(Outlet {
-                name: model.node(id.node).name.clone(),
-                fact: model.outlet_fact(*id)?.format_dt_shape(),
-            })
-        })
-        .collect()
-}
-
 fn ends_typed(model: &TypedModel, ids: &[OutletId]) -> Result<Vec<Outlet>, NetError> {
     ids.iter()
         .map(|id| {
@@ -253,9 +271,6 @@ impl std::fmt::Display for Signature {
         writeln!(f, "outputs:")?;
         for outlet in &self.outputs {
             writeln!(f, "  {} {}", outlet.name, outlet.fact)?;
-        }
-        if let Some(err) = &self.optimize_error {
-            write!(f, "optimize: {err}")?;
         }
         Ok(())
     }
