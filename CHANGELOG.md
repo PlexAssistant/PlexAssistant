@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.4.5] — 2026-11-03
+
+### Fixed
+
+- The scanner integration fixture was missing the columns a scan reads
+  when it looks up a season, so `cargo test` failed after a successful
+  analysis and the release image was not published.
+
 ## [0.4.4] — 2026-11-03
 
 ### Added
@@ -212,6 +220,7 @@
   ffprobe, direct SQLite writes, persistent link cache, cloud-drive
   protection (breaker, ledger, quota), install/verify/revert.
 
+[0.4.5]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.1...v0.4.2
