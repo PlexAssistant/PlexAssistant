@@ -19,7 +19,9 @@ PlexAssistant wraps the two binaries Plex spawns for library work:
   same user agent that resolved it; CDNs like 115 bind links to it)
   and writes duration, codecs, resolution, HDR badge and subtitle
   languages straight into the library database, shaped exactly like
-  the official rows.
+  the official rows. Opening the item's detail page does the same for a
+  strm that still has no media info, which a scan alone leaves empty
+  once Plex considers it analysed.
 - **Transcoder**: at playback the `-i` strm path is swapped for a
   cached direct link before the original transcoder runs. A link that
   dies mid-playback is refreshed and the session retried once, in
