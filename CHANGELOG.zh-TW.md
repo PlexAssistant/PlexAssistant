@@ -1,5 +1,15 @@
 # 變更日誌
 
+## [0.4.0] — 2026-11-03
+
+### 新增
+
+- 片頭與片尾偵測會記下自己寫過的標記。內容沒有變化的項目掃描時
+  直接跳過,手動設定的標記不會被之後的掃描覆蓋。`assistant marker`
+  可列出這些記錄,也能設定、重試或停止某一筆。
+- 片尾偵測會讀取文字周圍的框,用來把滾動字幕的起止從兩秒一次的
+  取樣點移開。靜止不動的字幕維持原樣。
+
 ## [0.3.1] — 2026-11-03
 
 ### 修正
@@ -120,6 +130,7 @@
   SQLite 直寫、持久連結快取、雲端硬碟保護(熔斷器、台帳、
   配額)、install/verify/revert 生命週期。
 
+[0.4.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.1...v0.2.2
