@@ -1,6 +1,5 @@
 #!/usr/bin/with-contenv bash
-# Install scanner/transcoder symlinks and scan prefs once at boot.
-BIN=/usr/local/bin/assistant
-[ -x "$BIN" ] || BIN=/dist/assistant-linux-arm64
-[ -x "$BIN" ] || exit 0 # nothing deployed yet
-exec "$BIN" install
+# Oneshot, before Plex starts: point Plex's scanner and transcoder at the
+# assistant and set the scan preferences. Install is idempotent, so it
+# runs on every boot and a recreated container heals itself.
+exec /usr/local/bin/assistant install

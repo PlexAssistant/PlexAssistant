@@ -22,7 +22,6 @@ services:
       - ./data/config:/config
       - ./testdata/strm:/data/strm:ro
       - ./private:/data/real:ro
-      - ./dist:/dist:ro
       - ./scripts/spike:/spike:ro
     ports:
       - "127.0.0.1:32400:32400"

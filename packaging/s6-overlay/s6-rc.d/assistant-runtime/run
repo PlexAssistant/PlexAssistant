@@ -1,7 +1,7 @@
 #!/usr/bin/with-contenv bash
-# Resident link-cache daemon; s6 restarts it on failure.
-BIN=/usr/local/bin/assistant
-[ -x "$BIN" ] || BIN=/dist/assistant-linux-arm64
+# Longrun: the link-cache daemon, as Plex's user. s6 restarts it if it
+# exits. The socket path is runtime::DEFAULT_SOCK, which the scanner and
+# the transcoder dial.
 mkdir -p /run/assistant
-chown abc:abc /run/assistant 2>/dev/null || true
-exec s6-setuidgid abc "$BIN" runtime --sock /run/assistant/assistant.sock
+chown abc:abc /run/assistant
+exec s6-setuidgid abc /usr/local/bin/assistant runtime --sock /run/assistant/assistant.sock
