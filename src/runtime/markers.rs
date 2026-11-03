@@ -47,7 +47,7 @@ pub struct MarkerRecord {
     pub marker_type: i64,
     pub start_ms: i64,
     pub end_ms: i64,
-    /// Hash of the strm target the marker was detected against.
+    /// Hash of the content key the marker was detected against.
     pub digest: String,
     pub origin: MarkerOrigin,
 }
@@ -251,14 +251,15 @@ fn read_marker(row: &rusqlite::Row<'_>) -> Result<MarkerRecord> {
     })
 }
 
-/// The content fingerprint detection compares against.
+/// The fingerprint detection compares against.
 ///
-/// The strm target, not the signed direct link: a refreshed signature
-/// is the same file. The query is part of the target, since some drives
-/// put the file identity there.
-pub fn marker_digest(target: &str) -> String {
+/// This is the content key, not the strm target. A resigned link or a
+/// re-added item keeps the same key, so detection is not repeated. The
+/// query string of a target is not an identity: drives put signatures
+/// there.
+pub fn marker_digest(content_key: &str) -> String {
     use sha2::{Digest, Sha256};
-    hex(&Sha256::digest(target.as_bytes()))
+    hex(&Sha256::digest(content_key.as_bytes()))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -299,9 +300,11 @@ mod tests {
             MarkerDecision::Skip
         );
 
-        // a new signature on the same file is still the same content
-        let resigned = marker_digest("http://x/file/ep1");
-        assert_eq!(digest, resigned);
+        // the same content key, however the file was reached, still skips
+        assert_eq!(
+            cache.marker_decision(42, CREDITS, &digest).unwrap(),
+            MarkerDecision::Skip
+        );
     }
 
     #[test]
@@ -380,11 +383,8 @@ mod tests {
     }
 
     #[test]
-    fn digest_ignores_nothing_about_the_target() {
-        assert_ne!(
-            marker_digest("http://x/a"),
-            marker_digest("http://x/a?token=1")
-        );
-        assert_eq!(marker_digest("http://x/a"), marker_digest("http://x/a"));
+    fn digest_follows_the_content_key() {
+        assert_ne!(marker_digest("d=1\ns=2\n"), marker_digest("d=9\ns=2\n"));
+        assert_eq!(marker_digest("d=1\ns=2\n"), marker_digest("d=1\ns=2\n"));
     }
 }

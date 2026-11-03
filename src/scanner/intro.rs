@@ -334,14 +334,14 @@ pub async fn detect_section_intros(
             db.write_marker(*item_id, MARKER_INTRO, start_ms, end_ms)?;
             if let Some(part) = episodes.iter().find(|(id, _)| id == item_id)
                 && let Some(cache) = intro_cache()
-                && let Ok(target) = linkres::parse_strm(&part.1.file)
             {
+                let key = media_key(&part.1);
                 cache.record_marker(
                     *item_id,
                     MARKER_INTRO,
                     start_ms,
                     end_ms,
-                    &crate::runtime::marker_digest(&target.value),
+                    &crate::runtime::marker_digest(&key),
                     std::time::SystemTime::now(),
                 )?;
             }
@@ -364,12 +364,19 @@ fn intro_unchanged(item_id: i64, part: &crate::plexdb::Part) -> bool {
     let Some(cache) = intro_cache() else {
         return false;
     };
-    let Ok(target) = linkres::parse_strm(&part.file) else {
-        return false;
-    };
-    let digest = crate::runtime::marker_digest(&target.value);
+    let digest = crate::runtime::marker_digest(&media_key(part));
     cache.marker_decision(item_id, MARKER_INTRO, &digest).ok()
         == Some(crate::runtime::MarkerDecision::Skip)
+}
+
+/// Duration and size, the pair the content ledger matches on. A part
+/// that has not been analysed yet has nothing stable, so its key is
+/// empty and detection runs.
+fn media_key(part: &crate::plexdb::Part) -> String {
+    if part.duration <= 0 || part.size <= 0 {
+        return String::new();
+    }
+    format!("d={}\ns={}\n", part.duration, part.size)
 }
 
 /// The ledger. The path is the one the runtime service uses, overridable
