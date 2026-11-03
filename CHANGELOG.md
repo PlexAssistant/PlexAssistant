@@ -9,6 +9,11 @@
   later episode of the same show gets that choice when the account has
   not picked one there yet. The stream ids from before the rewrite are
   kept. `assistant tracks restore` puts them back and forgets the choice.
+- Cloud reads are recorded per domain and per day: how many reads, how
+  many bytes, and how many of those reads opened past the start. A scan
+  probe counts as one byte. Playback counts the size the resolve learned,
+  and a `-ss` before the input counts as a seek. The quota and the
+  breaker still count requests only, and playback still bypasses both.
 
 ## [0.4.3] — 2026-11-03
 
