@@ -83,31 +83,28 @@ impl Cache {
     pub fn get(&self, target: &str) -> Result<Option<Entry>> {
         let conn = self.conn();
         let entry = conn
-            .query_row(
+            .prepare_cached(
                 "SELECT target_url, direct_url, IFNULL(ua,''), IFNULL(expires_at,0),
                         cached_at, last_used, hits FROM links WHERE target_url=?",
-                [target],
-                |r| {
-                    Ok(Entry {
-                        target: r.get(0)?,
-                        direct: r.get(1)?,
-                        ua: r.get(2)?,
-                        expires_at: r.get(3)?,
-                        cached_at: r.get(4)?,
-                        last_used: r.get(5)?,
-                        hits: r.get(6)?,
-                    })
-                },
-            )
+            )?
+            .query_row([target], |r| {
+                Ok(Entry {
+                    target: r.get(0)?,
+                    direct: r.get(1)?,
+                    ua: r.get(2)?,
+                    expires_at: r.get(3)?,
+                    cached_at: r.get(4)?,
+                    last_used: r.get(5)?,
+                    hits: r.get(6)?,
+                })
+            })
             .optional()?;
         let Some(mut entry) = entry else {
             return Ok(None);
         };
         let ts = now();
-        conn.execute(
-            "UPDATE links SET hits=hits+1, last_used=? WHERE target_url=?",
-            params![ts, target],
-        )?;
+        conn.prepare_cached("UPDATE links SET hits=hits+1, last_used=? WHERE target_url=?")?
+            .execute(params![ts, target])?;
         entry.hits += 1;
         entry.last_used = ts;
         Ok(Some(entry))
@@ -122,28 +119,30 @@ impl Cache {
         } else {
             entry.cached_at
         };
-        self.conn().execute(
-            "INSERT INTO links (target_url, direct_url, ua, expires_at, cached_at, last_used, hits)
-             VALUES (?,?,?,?,?,?,0)
-             ON CONFLICT(target_url) DO UPDATE SET
-                direct_url=excluded.direct_url, ua=excluded.ua,
-                expires_at=excluded.expires_at, last_used=excluded.last_used",
-            params![
+        self.conn()
+            .prepare_cached(
+                "INSERT INTO links (target_url, direct_url, ua, expires_at, cached_at, last_used, hits)
+                 VALUES (?,?,?,?,?,?,0)
+                 ON CONFLICT(target_url) DO UPDATE SET
+                    direct_url=excluded.direct_url, ua=excluded.ua,
+                    expires_at=excluded.expires_at, last_used=excluded.last_used",
+            )?
+            .execute(params![
                 entry.target,
                 entry.direct,
                 entry.ua,
                 entry.expires_at,
                 cached_at,
                 ts
-            ],
-        )?;
+            ])?;
         Ok(())
     }
 
     /// Reports cache totals.
     pub fn stats(&self) -> Result<Stats> {
         self.conn()
-            .query_row("SELECT count(*), IFNULL(sum(hits),0) FROM links", [], |r| {
+            .prepare_cached("SELECT count(*), IFNULL(sum(hits),0) FROM links")?
+            .query_row([], |r| {
                 Ok(Stats {
                     entries: r.get(0)?,
                     hits: r.get(1)?,

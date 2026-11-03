@@ -34,51 +34,6 @@ pub async fn detect_credits_visual(
     duration_secs: f64,
 ) -> Option<(i64, i64)> {
     let tail_start = (duration_secs - TAIL_SECS).max(0.0);
-
-    let mut args: Vec<String> = vec![
-        "-y".into(),
-        "-hide_banner".into(),
-        "-loglevel".into(),
-        "error".into(),
-    ];
-    if input.starts_with("http://") || input.starts_with("https://") {
-        args.push("-headers".into());
-        args.push(format!("User-Agent: {ua}\r\n"));
-    }
-    if tail_start > 0.0 {
-        args.push("-ss".into());
-        args.push(format!("{tail_start:.3}"));
-    }
-    args.extend([
-        "-i".into(),
-        input.to_owned(),
-        "-an".into(),
-        "-vf".into(),
-        // sobel edges at 320px grayscale, 0.5 fps sampling
-        "fps=0.5,scale=320:-2,format=gray,edgedetect=low=0.08:high=0.2".into(),
-        "-f".into(),
-        "rawvideo".into(),
-        "-".into(),
-    ]);
-
-    let out = Command::new(ffmpeg)
-        .args(&args)
-        .kill_on_drop(true)
-        .output()
-        .await
-        .ok()?;
-    let stdout = out.stdout;
-    if stdout.is_empty() {
-        eprintln!("credits visual: no frames extracted");
-        return None;
-    }
-
-    // each frame is a variable-width grayscale strip; we need the width
-    // to split frames. scale=320:-2 preserves aspect, so height varies.
-    // re-run with fixed square padding to make frame size predictable.
-    // for now, detect width from the first frame boundary is fragile;
-    // simpler: use scale=320:320 with pad.
-    let _ = stdout; // fall through to padded version below
     detect_with_padding(ffmpeg, input, ua, tail_start).await
 }
 

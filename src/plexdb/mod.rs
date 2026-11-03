@@ -1,6 +1,6 @@
-//! Reads and writes the Plex library SQLite database directly. The safety
-//! protocol (busy_timeout, schema whitelist, backup before writes) follows
-//! the measured behavior in development-plan §8.
+//! Reads and writes the Plex library SQLite database directly, with the
+//! write-safety protocol (busy_timeout, schema gate, backup before
+//! writes).
 
 use std::path::Path;
 use std::time::Duration;
@@ -16,10 +16,12 @@ pub use write::{StreamRow, WriteError, WriteSpec};
 /// The library database inside the Plex container.
 pub const DEFAULT_PATH: &str = "/config/Library/Application Support/Plex Media Server/Plug-in Support/Databases/com.plexapp.plugins.library.db";
 
-/// schema_migrations versions this build can handle; an unknown version
-/// means "refuse to write" (reads stay allowed).
-const KNOWN_SCHEMAS: &[&str] = &[
-    "500000000001.231", // measured on Plex 1.43.5
+/// schema_migrations major versions this build can handle. Minor
+/// differences are tolerated: Plex ships bugfix migrations that do not
+/// move the tables we touch. An unknown major means "refuse to write"
+/// (reads stay allowed).
+const KNOWN_SCHEMA_MAJORS: &[&str] = &[
+    "500000000001", // known-good with Plex 1.43.5
 ];
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -63,7 +65,8 @@ impl Db {
     /// the version found.
     pub fn schema_known(&self) -> Result<(bool, String)> {
         let v = self.schema_version()?;
-        Ok((KNOWN_SCHEMAS.contains(&v.as_str()), v))
+        let major = v.split('.').next().unwrap_or_default();
+        Ok((KNOWN_SCHEMA_MAJORS.contains(&major), v))
     }
 
     /// Returns the media parts of a metadata item, joined through
@@ -173,6 +176,14 @@ mod tests {
             (true, "500000000001.231".into())
         );
 
+        // minor differences are tolerated: same tables, newer migrations
+        let (_dir, db) = fixture("500000000001.232");
+        assert_eq!(
+            db.schema_known().unwrap(),
+            (true, "500000000001.232".into())
+        );
+
+        // a different major means untouched territory: refuse to write
         let (_dir, db) = fixture("999999999999.999");
         assert_eq!(
             db.schema_known().unwrap(),

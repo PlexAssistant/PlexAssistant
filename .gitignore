@@ -11,6 +11,9 @@ result-*
 docs/
 TODO.md
 
+# Local analysis tooling (kept out of the published repo)
+scripts/spike/
+
 # Secrets & local config
 .env
 *.local.yaml

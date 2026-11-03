@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -93,6 +94,8 @@ impl Daemon {
             _ => {}
         }
         let listener = UnixListener::bind(sock)?;
+        // owner+group only, whatever the service umask happens to be
+        fs::set_permissions(sock, fs::Permissions::from_mode(0o660))?;
         axum::serve(listener, self.router()).await
     }
 
@@ -536,7 +539,7 @@ mod tests {
         tokio::spawn(async move { daemon.serve(path).await.unwrap() });
 
         let client = reqwest::Client::builder()
-            .unix_socket(sock)
+            .unix_socket(sock.clone())
             .build()
             .unwrap();
         let mut status = None;
@@ -548,6 +551,9 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         assert_eq!(status, Some(StatusCode::OK));
+        // the socket is locked down to owner+group
+        let mode = fs::metadata(&sock).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o660);
     }
 
     #[test]

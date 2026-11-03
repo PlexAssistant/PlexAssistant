@@ -1,7 +1,7 @@
 //! extra_data the way Plex's analysis writes it: a JSON object of ma:/pv:
 //! fields in key order plus a url-encoded copy. PMS derives the client's
 //! displayTitle ("2160p HDR10", ...) and direct-play decisions from them.
-//! Field rules are measured in tests/fixtures/plex-1.43.5.11079.
+//! Field rules are pinned by tests/fixtures/plex-1.43.5.11079.
 
 use std::collections::BTreeMap;
 use std::fmt::Write;

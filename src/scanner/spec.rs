@@ -6,7 +6,7 @@ use super::lang::normalize_lang;
 use super::parse::{atoi64, parse_fps, parse_ratio};
 use super::probe::{ProbeResult, duration_ms};
 
-/// Maps a probe result onto the row shapes the official scanner writes.
+/// Maps a probe result onto the row shapes Plex's own analysis writes.
 pub fn build_spec(part: &Part, probe: &ProbeResult, link: &Link) -> WriteSpec {
     let format = &probe.format;
     let matroska = format.format_name.starts_with("matroska");
@@ -107,7 +107,7 @@ fn stream_type_id(codec_type: &str) -> i64 {
     }
 }
 
-/// Plex's name for ffprobe's container, as measured in
+/// Plex's name for ffprobe's container, as pinned by
 /// tests/fixtures/plex-1.43.5.11079: Matroska and WebM are "mkv", the
 /// ISO BMFF family is "mov" for QuickTime brands and "mp4" otherwise
 /// (m4v included), and everything else keeps ffprobe's first name
@@ -123,7 +123,7 @@ fn map_container(format_name: &str, major_brand: &str) -> String {
     .to_owned()
 }
 
-/// Plex's name for ffprobe's codec where they differ; measured in
+/// Plex's name for ffprobe's codec where they differ; pinned by
 /// tests/fixtures/plex-1.43.5.11079.
 fn plex_codec(codec_name: &str) -> String {
     match codec_name {

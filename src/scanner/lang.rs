@@ -4,7 +4,7 @@ use super::lang_table::ISO639_2_TO_1;
 /// where one exists ("eng"/"en" -> "en", "chi"/"zho" -> "zh"), any other
 /// code as-is ("fil"), "" for "und", and for an untagged stream the
 /// container's default: English in Matroska (its spec default), none
-/// elsewhere. Measured against Plex 1.43.5 (tests/fixtures).
+/// elsewhere. Verified against Plex 1.43.5 (tests/fixtures).
 pub(super) fn normalize_lang(tag: &str, matroska: bool) -> String {
     let tag = tag.trim().to_ascii_lowercase();
     match tag.as_str() {
@@ -28,7 +28,7 @@ mod tests {
 
     #[test]
     fn like_plex() {
-        // (tag, matroska, stored) as measured in tests/fixtures/plex-1.43.5.11079
+        // (tag, matroska, stored) as pinned by tests/fixtures/plex-1.43.5.11079
         for (tag, matroska, want) in [
             ("en", true, "en"),
             ("eng", true, "en"),

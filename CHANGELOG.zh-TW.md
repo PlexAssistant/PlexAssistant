@@ -1,5 +1,36 @@
 # 變更日誌
 
+## [0.2.2] — 2026-11-03
+
+### 修正
+
+- 視覺片尾偵測對同一檔案跑了兩次 ffmpeg:第一輪的輸出直接丟棄,
+  之後才跑真正的定寬輪。對網路 strm 目標,等於每次片尾掃描的
+  下載與解碼成本翻倍。
+
+### 變更
+
+- ffprobe 加上 `-rw_timeout 50000000`(50 秒讀取停滯上限):
+  CDN 連線卡死時 50 秒內報錯,不再等到外層兩分鐘程序逾時。
+- ffprobe 協議白名單補上 `crypto` 與 `httpproxy`(部分帶簽名
+  query 的 CDN 缺 `crypto` 會交握失敗)。
+- 日誌衛生:ffmpeg/ffprobe 錯誤與 stderr 尾段中出現的 URL
+  一律剝除 query string 後再輸出,CDN token 不再進掃描日誌。
+- Plex schema 門檻改為只比對 `schema_migrations` 主版本:Plex
+  的修板遷移(如 `.232`)不再停用寫入;主版本不同仍拒寫。
+
+### 安全
+
+- runtime daemon 的 unix socket 改為顯式 `0o660` 權限建立,
+  不再繼承服務 umask。
+
+### 效能
+
+- 掃描器在整個程序生命週期重用同一個 daemon client,不再
+  每個 item 重建 HTTP client。
+- 直鏈快取與死鏈帳本的 SQL 語句改走 SQLite prepared statement
+  快取。
+
 ## [0.2.1] — 2026-11-03
 
 ### 新增
@@ -20,7 +51,7 @@
   幀率、掃描類型),用戶端不再顯示 "Unknown"。
 - `assistant intro --section N` 指令用於片頭偵測。
 - 開發工具:`strmock`(假雲端硬碟)、`plex-truth.sh`(fixture
-  採集)、`bin-swap.sh`(協定驗證)。
+  採集)、`bin-swap.sh`(本地輔助)。
 
 ### 變更
 

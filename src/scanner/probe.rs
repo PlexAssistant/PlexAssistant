@@ -19,17 +19,21 @@ pub enum ProbeError {
     Parse(#[from] serde_json::Error),
 }
 
-/// Mirrors the measured parameter line: bounded probe size so a stray huge
-/// file cannot stall analysis, and an explicit protocol whitelist for
-/// remote inputs.
-fn probe_args<'a>(url: &'a str, ua: &'a str) -> [&'a str; 14] {
+/// Bounded probe parameters: a probe size cap so a stray huge file
+/// cannot stall analysis, an explicit protocol whitelist for remote
+/// inputs, and a 50-second read-stall bound (microseconds, as ffprobe
+/// expects) so a wedged CDN connection fails here instead of hanging
+/// until the outer process timeout.
+fn probe_args<'a>(url: &'a str, ua: &'a str) -> [&'a str; 16] {
     [
         "-v",
         "error",
+        "-rw_timeout",
+        "50000000",
         "-probesize",
         "8388608",
         "-protocol_whitelist",
-        "file,http,https,tcp,tls",
+        "file,http,https,tcp,tls,crypto,httpproxy",
         "-user_agent",
         ua,
         "-show_format",
@@ -266,7 +270,7 @@ pub(super) mod tests {
     }
 
     #[tokio::test]
-    async fn runs_ffprobe_with_measured_args() {
+    async fn runs_ffprobe_with_expected_args() {
         let dir = tempfile::tempdir().unwrap();
         let args_file = dir.path().join("args");
         let ffprobe = fake_ffprobe(

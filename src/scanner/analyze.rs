@@ -1,5 +1,6 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::linkres::{self, Link};
 use crate::plexdb::{Db, WriteError};
@@ -7,6 +8,25 @@ use crate::runtime::Client;
 
 use super::probe::{ProbeError, ProbeResult, probe};
 use super::spec::build_spec;
+
+/// One daemon client per process: section scans resolve every item
+/// through the daemon, and rebuilding the HTTP client (and its
+/// connection pool) per item is pure waste. Keyed by socket so tests
+/// pointing at different daemons keep working.
+static SHARED_CLIENT: OnceLock<(PathBuf, Client)> = OnceLock::new();
+
+fn shared_client(sock: &Path) -> Option<Client> {
+    if let Some((cached_sock, client)) = SHARED_CLIENT.get() {
+        if cached_sock == sock {
+            return Some(client.clone());
+        }
+        // a different socket (tests with several daemons): uncached
+        return Client::new(sock).ok();
+    }
+    let client = Client::new(sock).ok()?;
+    let _ = SHARED_CLIENT.set((sock.to_owned(), client.clone()));
+    Some(client)
+}
 
 /// Configures one analysis run.
 #[derive(Debug, Clone, Default)]
@@ -114,12 +134,16 @@ async fn probe_and_heal(
                 }
                 Err(e) => {
                     report_dead(target, opts).await;
+                    // ffprobe errors can echo the signed URL; redact it
+                    let e = super::redact_urls(&e.to_string());
                     println!("item {item} part {part}: still dead after refresh: {e}");
                     None
                 }
             }
         }
         Err(e) => {
+            // ffprobe errors can echo the signed URL; redact it
+            let e = super::redact_urls(&e.to_string());
             println!("item {item} part {part}: probe: {e}");
             None
         }
@@ -138,7 +162,7 @@ fn is_dead_link(e: &ProbeError) -> bool {
 /// resolutions), falling back to resolving directly.
 pub async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
     if let Some(sock) = &opts.runtime_sock
-        && let Ok(client) = Client::new(sock)
+        && let Some(client) = shared_client(sock)
         && let Ok(res) = client.resolve(target).await
     {
         return Some(Link {
@@ -154,7 +178,7 @@ pub async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
 /// link, deduped per target by the caller.
 async fn refresh_link(target: &str, opts: &Options) -> Option<Link> {
     if let Some(sock) = &opts.runtime_sock
-        && let Ok(client) = Client::new(sock)
+        && let Some(client) = shared_client(sock)
         && let Ok(res) = client.refresh(target).await
     {
         return Some(Link {
@@ -169,7 +193,7 @@ async fn refresh_link(target: &str, opts: &Options) -> Option<Link> {
 /// Books a persistently dead target into the daemon's ledger.
 async fn report_dead(target: &str, opts: &Options) {
     if let Some(sock) = &opts.runtime_sock
-        && let Ok(client) = Client::new(sock)
+        && let Some(client) = shared_client(sock)
     {
         let _ = client.dead(target).await;
     }
