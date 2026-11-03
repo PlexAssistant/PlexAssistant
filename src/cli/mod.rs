@@ -8,6 +8,7 @@ mod install;
 mod marker;
 mod runtime;
 mod scanner;
+mod tracks;
 mod transcoder;
 
 use std::error::Error;
@@ -42,6 +43,8 @@ enum Command {
     CreditsProbe(CreditsProbeArgs),
     /// Shows and edits the markers detection booked.
     Marker(marker::Args),
+    /// Shows and restores remembered audio and subtitle choices.
+    Tracks(tracks::Args),
 }
 
 /// Prints the credits model's inputs and outputs. Detection does not
@@ -124,6 +127,7 @@ pub async fn run() -> i32 {
         Command::Intro(args) => run_intro(args).await,
         Command::CreditsProbe(args) => run_credits_probe(args),
         Command::Marker(args) => marker::run(args),
+        Command::Tracks(args) => tracks::run(args),
     };
     result.unwrap_or_else(|e| {
         eprintln!("Error: {e}");

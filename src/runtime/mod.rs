@@ -11,6 +11,7 @@ mod ledger;
 mod markers;
 mod parts;
 mod quota;
+mod tracks;
 mod watch;
 
 pub use cache::{Cache, Entry, OpenError, Stats};
@@ -19,4 +20,5 @@ pub use daemon::{DEFAULT_SOCK, Daemon, Resolved, TargetRequest};
 pub use identity::Identity;
 pub use markers::{MarkerDecision, MarkerOrigin, MarkerRecord, marker_digest};
 pub use parts::PartFailure;
+pub use tracks::{ChoiceUpdate, Remembered};
 pub use watch::{DEFAULT_LOG, detail_item, follow, log_path};

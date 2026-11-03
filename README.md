@@ -21,7 +21,10 @@ PlexAssistant wraps the two binaries Plex spawns for library work:
   languages straight into the library database, shaped exactly like
   the official rows. Opening the item's detail page does the same for a
   strm that still has no media info, which a scan alone leaves empty
-  once Plex considers it analysed.
+  once Plex considers it analysed. An audio or subtitle choice survives
+  that rewrite, and the same account gets it on a later episode of the
+  show. `assistant tracks restore` puts back the stream ids from before
+  the rewrite.
 - **Transcoder**: at playback the `-i` strm path is swapped for a
   cached direct link before the original transcoder runs. A link that
   dies mid-playback is refreshed and the session retried once, in
