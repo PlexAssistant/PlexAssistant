@@ -3,6 +3,7 @@
 
 mod analyze;
 pub mod credits;
+pub mod credits_model;
 mod extra;
 pub mod intro;
 mod lang;
