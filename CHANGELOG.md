@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Intro detection runs as part of a scan. A season with at least two strm
+  episodes is fingerprinted after its items are analysed, and an episode
+  whose intro is already booked is not fingerprinted again.
+  `assistant intro` still runs the same detection on its own.
+
 ## [0.4.2] — 2026-11-03
 
 ### Added
