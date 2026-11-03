@@ -123,11 +123,9 @@ impl Daemon {
             Ok(link) => link,
             Err(err) => {
                 self.breakers.record_failure(&domain, Instant::now());
-                let booked = if err.is_permanent() {
-                    self.cache.record_permanent(target, SystemTime::now())
-                } else {
-                    self.cache.record_failure(target, SystemTime::now())
-                };
+                let booked = self
+                    .cache
+                    .record_dead(target, err.is_permanent(), SystemTime::now());
                 if let Err(e) = booked {
                     return error(StatusCode::INTERNAL_SERVER_ERROR, e);
                 }
@@ -143,8 +141,7 @@ impl Daemon {
         } else {
             (1, false)
         };
-        let _ = force;
-        if let Err(e) = self.note_read(&domain, bytes, i64::from(seek)) {
+        if let Err(e) = self.note_read(&domain, bytes, seek) {
             return error(StatusCode::INTERNAL_SERVER_ERROR, e);
         }
         if let Err(e) = self.cache.clear_failure(target) {
@@ -168,12 +165,12 @@ impl Daemon {
         })
     }
 
-    /// Books one cloud read. `bytes` is the size the headers reported.
-    /// `offset` above zero is a seek: the caller opened past the start.
-    /// The quota is not touched here.
-    fn note_read(&self, domain: &str, bytes: i64, offset: i64) -> rusqlite::Result<()> {
+    /// Books one cloud read. `bytes` is the size the headers reported;
+    /// `seek` means the caller opened past the start. The quota is not
+    /// touched here.
+    fn note_read(&self, domain: &str, bytes: i64, seek: bool) -> rusqlite::Result<()> {
         self.cache
-            .record_read(domain, bytes, offset > 0, SystemTime::now())
+            .record_read(domain, bytes, seek, SystemTime::now())
     }
 }
 
@@ -190,7 +187,7 @@ async fn handle_resolve(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
             // and that open is the read, from the start or from later on.
             // The quota is not touched.
             if req.playback
-                && let Err(e) = d.note_read(&host_of(&req.target), entry.size, req.offset)
+                && let Err(e) = d.note_read(&host_of(&req.target), entry.size, req.offset > 0)
             {
                 return error(StatusCode::INTERNAL_SERVER_ERROR, e);
             }
@@ -255,12 +252,10 @@ async fn handle_refresh(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
 async fn handle_dead(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
     match decode(&body) {
         Ok(req) => {
-            let booked = if req.permanent {
-                d.cache.record_permanent(&req.target, SystemTime::now())
-            } else {
-                d.cache.record_failure(&req.target, SystemTime::now())
-            };
-            match booked {
+            match d
+                .cache
+                .record_dead(&req.target, req.permanent, SystemTime::now())
+            {
                 Ok(()) => StatusCode::NO_CONTENT.into_response(),
                 Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
             }

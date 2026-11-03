@@ -347,7 +347,7 @@ async fn probe_and_heal(
                 .lock()
                 .is_ok_and(|mut set| set.insert(target.to_owned()));
             if !claimed {
-                report_dead(target, opts).await;
+                report(target, opts, false).await;
                 println!("item {item} part {part}: dead target, backing off");
                 return None;
             }
@@ -365,7 +365,7 @@ async fn probe_and_heal(
                     Some((probed, fresh))
                 }
                 Err(e) => {
-                    report_dead(target, opts).await;
+                    report(target, opts, false).await;
                     // ffprobe errors can echo the signed URL; redact it
                     let e = super::redact_urls(&e.to_string());
                     println!("item {item} part {part}: still dead after refresh: {e}");
@@ -376,7 +376,7 @@ async fn probe_and_heal(
         Err(e) => {
             // not a dead link, so no refresh — but it still failed, and
             // leaving it unbooked re-probes it on every later scan
-            report_dead(target, opts).await;
+            report(target, opts, false).await;
             // ffprobe errors can echo the signed URL; redact it
             let e = super::redact_urls(&e.to_string());
             println!("item {item} part {part}: probe: {e}");
@@ -453,23 +453,14 @@ async fn refresh_link(target: &str, opts: &Options) -> Option<Link> {
     linkres::resolve(target, &opts.user_agent).await.ok()
 }
 
-/// Books a persistently dead target into the daemon's ledger.
-async fn report_dead(target: &str, opts: &Options) {
-    report(target, opts, false).await;
-}
-
-/// Books a target. `permanent` is skipped until a success clears it;
-/// anything else takes the growing backoff.
+/// Books a target with the daemon, when one is reachable. `permanent` is
+/// skipped until a success clears it; anything else takes the growing
+/// backoff.
 async fn report(target: &str, opts: &Options, permanent: bool) {
     if let Some(sock) = &opts.runtime_sock
         && let Some(client) = shared_client(sock)
     {
-        let booked = if permanent {
-            client.dead_permanent(target).await
-        } else {
-            client.dead(target).await
-        };
-        let _ = booked;
+        let _ = client.dead(target, permanent).await;
     }
 }
 

@@ -55,17 +55,9 @@ impl Client {
         self.post("refresh", target, i64::from(seek), true).await
     }
 
-    /// Records a dead cached link for ledger backoff.
-    pub async fn dead(&self, target: &str) -> Result<(), ClientError> {
-        self.book(target, false).await
-    }
-
-    /// Records a failure that will not clear on its own.
-    pub async fn dead_permanent(&self, target: &str) -> Result<(), ClientError> {
-        self.book(target, true).await
-    }
-
-    async fn book(&self, target: &str, permanent: bool) -> Result<(), ClientError> {
+    /// Records a dead target in the ledger. `permanent` marks a failure
+    /// that will not clear on its own; anything else takes the backoff.
+    pub async fn dead(&self, target: &str, permanent: bool) -> Result<(), ClientError> {
         let body = serde_json::to_vec(&TargetRequest {
             target: target.to_owned(),
             permanent,

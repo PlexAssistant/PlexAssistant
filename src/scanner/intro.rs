@@ -425,12 +425,7 @@ async fn resolve(part: &crate::plexdb::Part, ua: &str, sock: Option<&PathBuf>) -
             if let Some(sock) = sock
                 && let Ok(client) = Client::new(sock)
             {
-                let booked = if err.is_permanent() {
-                    client.dead_permanent(&target.value).await
-                } else {
-                    client.dead(&target.value).await
-                };
-                let _ = booked;
+                let _ = client.dead(&target.value, err.is_permanent()).await;
             }
             None
         }
