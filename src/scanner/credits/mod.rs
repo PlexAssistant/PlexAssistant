@@ -1,9 +1,9 @@
 //! Credits detection over the tail of a file.
 //!
 //! Three detectors, tried in an order the user picks:
-//! - [`black`]: ffmpeg's blackdetect finds a long black window.
-//! - [`graph`]: the text-detection model Plex already stored scores frames.
-//! - [`edges`]: edge density finds text over live picture.
+//! - `black`: ffmpeg's blackdetect finds a long black window.
+//! - `graph`: the text-detection model Plex already stored scores frames.
+//! - `edges`: edge density finds text over live picture.
 //!
 //! Plex invokes credits detection with its own argv, so the choice is an
 //! environment variable rather than a flag.

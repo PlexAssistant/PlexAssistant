@@ -81,7 +81,7 @@ impl Server {
         self.controls.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Returns "<unix-exp>.<hmac8>" over id and exp.
+    /// Returns `<unix-exp>.<hmac8>` over id and exp.
     fn sign(&self, id: &str, exp: i64) -> String {
         let mut mac = Hmac::<Sha256>::new_from_slice(&self.secret).expect("hmac takes any key");
         mac.update(format!("{id}|{exp}").as_bytes());

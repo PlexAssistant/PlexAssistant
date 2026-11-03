@@ -95,7 +95,7 @@ pub struct Swap {
     pub seek: bool,
 }
 
-/// Replaces every "-i <path>.strm" input with a resolved direct link and
+/// Replaces every `-i <path>.strm` input with a resolved direct link and
 /// injects the resolving user agent before it: cloud CDNs bind links to
 /// the UA that resolved them, and the original transcoder would otherwise
 /// fetch with ffmpeg's default one. Arguments stay OsStrings because Plex
