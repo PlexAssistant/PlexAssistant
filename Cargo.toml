@@ -11,6 +11,7 @@ name = "assistant"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 clap = { version = "4.6.7", features = ["derive"] }
 futures-util = { version = "0.3.34", default-features = false }

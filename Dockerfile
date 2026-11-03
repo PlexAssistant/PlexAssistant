@@ -46,7 +46,7 @@ RUN ./configure \
         --extra-cflags=-w \
         --enable-version3 --disable-autodetect --enable-openssl --enable-zlib \
         --disable-everything \
-        --enable-muxer=null,wav --enable-encoder=wrapped_avframe,pcm_s16le --enable-filter=blackdetect,silencedetect,format,fps,scale,aresample \
+        --enable-muxer=null,wav,rawvideo --enable-encoder=wrapped_avframe,pcm_s16le,rawvideo --enable-filter=blackdetect,silencedetect,format,fps,scale,aresample,edgedetect,pad \
         --disable-doc --disable-debug --disable-avdevice \
         --enable-demuxers --enable-parsers --enable-decoders --enable-bsfs \
         --enable-protocol=file,pipe,data,crypto,tcp,tls,http,https,httpproxy && \
