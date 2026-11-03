@@ -3,7 +3,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::CliResult;
+use super::{CliResult, env_or};
 use crate::linkres::{self, DEFAULT_UA};
 use crate::plexdb::{self, Db};
 use crate::runtime::{self, DEFAULT_SOCK};
@@ -38,10 +38,7 @@ impl Default for ScanFlags {
             section: 0,
             item: 0,
             library_db: plexdb::DEFAULT_PATH.into(),
-            ffprobe: std::env::var("ASSISTANT_FFPROBE")
-                .ok()
-                .filter(|v| !v.is_empty())
-                .unwrap_or_else(|| "ffprobe".into()),
+            ffprobe: env_or("ASSISTANT_FFPROBE", "ffprobe"),
             ua: DEFAULT_UA.into(),
             runtime_sock: DEFAULT_SOCK.into(),
         }
@@ -172,13 +169,9 @@ fn marker_cache() -> Option<runtime::Cache> {
 async fn run_credits(file: &OsStr) -> CliResult {
     let file_str = file.to_string_lossy().into_owned();
     let opts = Options {
-        ffprobe: std::env::var("ASSISTANT_FFPROBE").unwrap_or_else(|_| "ffprobe".into()),
+        ffprobe: env_or("ASSISTANT_FFPROBE", "ffprobe"),
         user_agent: DEFAULT_UA.into(),
-        runtime_sock: std::env::var("ASSISTANT_SOCK")
-            .ok()
-            .map(PathBuf::from)
-            .filter(|s| !s.as_os_str().is_empty())
-            .or_else(|| Some(PathBuf::from(DEFAULT_SOCK))),
+        runtime_sock: Some(env_or("ASSISTANT_SOCK", DEFAULT_SOCK).into()),
         cache: Some(runtime::cache_path()),
     };
 
@@ -208,7 +201,7 @@ async fn run_credits(file: &OsStr) -> CliResult {
         println!("credits: resolve failed for {file_str}");
         return Ok(0); // nothing to detect; PMS counts this a success
     };
-    let ffmpeg = std::env::var("ASSISTANT_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
+    let ffmpeg = env_or("ASSISTANT_FFMPEG", "ffmpeg");
     let choice = scanner::credits_choice::Detector::parse(
         std::env::var(scanner::credits_choice::ENV).ok().as_deref(),
     );
@@ -340,8 +333,8 @@ async fn analyze_one(db: &mut Db, item: i64, opts: &Options) -> CliResult {
 /// Failures are logged. A season with fewer than two strm episodes, or
 /// one whose episodes are already booked, writes nothing.
 async fn detect_intros(db: &mut Db, seasons: &[i64], opts: &Options) {
-    let ffmpeg = std::env::var("ASSISTANT_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
-    let fpcalc = std::env::var("ASSISTANT_FPCALC").unwrap_or_else(|_| "fpcalc".into());
+    let ffmpeg = env_or("ASSISTANT_FFMPEG", "ffmpeg");
+    let fpcalc = env_or("ASSISTANT_FPCALC", "fpcalc");
     for &season in seasons {
         match scanner::intro::detect_season_intros(
             db,

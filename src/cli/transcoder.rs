@@ -1,7 +1,7 @@
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use super::CliResult;
+use super::{CliResult, env_or};
 use crate::linkres::DEFAULT_UA;
 use crate::runtime::DEFAULT_SOCK;
 use crate::transcoder::{self, DaemonResolver};
@@ -17,11 +17,8 @@ pub struct Args {
 }
 
 pub async fn run(args: Args, argv0: &Path) -> CliResult {
-    let sock = std::env::var_os("ASSISTANT_SOCK")
-        .filter(|s| !s.is_empty())
-        .map_or_else(|| PathBuf::from(DEFAULT_SOCK), PathBuf::from);
     let resolver = DaemonResolver {
-        sock: Some(sock),
+        sock: Some(env_or("ASSISTANT_SOCK", DEFAULT_SOCK).into()),
         user_agent: DEFAULT_UA.into(),
     };
     let mut real = argv0.as_os_str().to_owned();
