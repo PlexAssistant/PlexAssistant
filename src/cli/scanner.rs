@@ -125,10 +125,7 @@ pub async fn run(args: Args) -> CliResult {
         ffprobe: flags.ffprobe,
         user_agent: flags.ua,
         runtime_sock: Some(flags.runtime_sock).filter(|s| !s.as_os_str().is_empty()),
-        cache: std::env::var("ASSISTANT_CACHE")
-            .ok()
-            .map(PathBuf::from)
-            .filter(|p| !p.as_os_str().is_empty()),
+        cache: Some(runtime::cache_path()),
     };
     let mut db = Db::open(&flags.library_db)?;
     // one refresh budget per target for the whole run
@@ -168,10 +165,7 @@ fn credits_key(db: &Db, item: i64) -> Result<String, rusqlite::Error> {
 /// The assistant's own ledger, when its cache can be opened. A missing
 /// cache must not stop detection: the marker is still written to Plex.
 fn marker_cache() -> Option<runtime::Cache> {
-    let path = std::env::var("ASSISTANT_CACHE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/config/assistant/cache.db"));
-    runtime::Cache::open(path).ok()
+    runtime::Cache::open(runtime::cache_path()).ok()
 }
 
 /// Credits detection for one file: find the item, resolve a strm target
@@ -187,10 +181,7 @@ async fn run_credits(file: &OsStr) -> CliResult {
             .map(PathBuf::from)
             .filter(|s| !s.as_os_str().is_empty())
             .or_else(|| Some(PathBuf::from(DEFAULT_SOCK))),
-        cache: std::env::var("ASSISTANT_CACHE")
-            .ok()
-            .map(PathBuf::from)
-            .filter(|p| !p.as_os_str().is_empty()),
+        cache: Some(runtime::cache_path()),
     };
 
     let mut db = Db::open(plexdb::DEFAULT_PATH)?;

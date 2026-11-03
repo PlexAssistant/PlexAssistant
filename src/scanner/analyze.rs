@@ -182,8 +182,7 @@ fn open_cache(opts: &Options) -> Option<Cache> {
     let path = opts
         .cache
         .clone()
-        .or_else(|| std::env::var("ASSISTANT_CACHE").ok().map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("/config/assistant/cache.db"));
+        .unwrap_or_else(crate::runtime::cache_path);
     Cache::open(path).ok()
 }
 

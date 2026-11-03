@@ -13,7 +13,7 @@ pub struct Args {
     #[arg(long, default_value = DEFAULT_SOCK)]
     sock: PathBuf,
     /// cache database path
-    #[arg(long, default_value = "/config/assistant/cache.db")]
+    #[arg(long, default_value = crate::runtime::DEFAULT_CACHE)]
     cache: PathBuf,
     /// user agent for cloud drives
     #[arg(long, default_value = DEFAULT_UA)]

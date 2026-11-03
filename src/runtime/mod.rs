@@ -15,7 +15,7 @@ mod tracks;
 mod usage;
 mod watch;
 
-pub use cache::{Cache, Entry, OpenError, Stats};
+pub use cache::{Cache, DEFAULT_CACHE, Entry, OpenError, Stats, cache_path};
 pub use client::{Client, ClientError};
 pub use daemon::{DEFAULT_SOCK, Daemon, Resolved, TargetRequest};
 pub use identity::Identity;

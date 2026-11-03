@@ -399,10 +399,7 @@ fn media_key(part: &crate::plexdb::Part) -> String {
 /// The ledger. The path is the one the runtime service uses, overridable
 /// so a scan outside the container can point at its own cache.
 fn intro_cache() -> Option<crate::runtime::Cache> {
-    let path = std::env::var("ASSISTANT_CACHE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/config/assistant/cache.db"));
-    crate::runtime::Cache::open(path).ok()
+    crate::runtime::Cache::open(crate::runtime::cache_path()).ok()
 }
 
 /// Resolves a strm part to a direct link through the daemon or directly.
