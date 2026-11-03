@@ -1,7 +1,7 @@
 #!/usr/bin/with-contenv bash
 # Longrun: the link-cache daemon, as Plex's user. s6 restarts it if it
 # exits. The socket path is runtime::DEFAULT_SOCK, which the scanner and
-# the transcoder dial.
+# the transcoder dial; tests/packaging.rs keeps the two in step.
 mkdir -p /run/assistant
 chown abc:abc /run/assistant
 exec s6-setuidgid abc /usr/local/bin/assistant runtime --sock /run/assistant/assistant.sock
