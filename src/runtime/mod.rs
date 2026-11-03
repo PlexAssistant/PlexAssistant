@@ -12,6 +12,7 @@ mod markers;
 mod parts;
 mod quota;
 mod tracks;
+mod usage;
 mod watch;
 
 pub use cache::{Cache, Entry, OpenError, Stats};

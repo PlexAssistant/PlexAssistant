@@ -9,8 +9,16 @@ use crate::scanner::is_strm;
 /// Supplies direct links; None when no link could be had.
 pub trait Resolver {
     fn resolve(&self, target: &str) -> impl Future<Output = Option<String>> + Send;
+    /// Resolves and records `seek` when the caller opened past the start.
+    fn resolve_at(&self, target: &str, _seek: bool) -> impl Future<Output = Option<String>> + Send {
+        self.resolve(target)
+    }
     /// Forces a fresh link (playback hit a dead one).
     fn refresh(&self, target: &str) -> impl Future<Output = Option<String>> + Send;
+    /// Re-resolves. `seek` records that playback opened past the start.
+    fn refresh_at(&self, target: &str, _seek: bool) -> impl Future<Output = Option<String>> + Send {
+        self.refresh(target)
+    }
     /// Books a target that stayed dead even after a refresh.
     fn dead(&self, _target: &str) -> impl Future<Output = ()> + Send {
         async {}
@@ -26,18 +34,18 @@ pub struct DaemonResolver {
 }
 
 impl DaemonResolver {
-    async fn ask_daemon(&self, target: &str, refresh: bool) -> Option<String> {
+    async fn ask_daemon(&self, target: &str, refresh: bool, seek: bool) -> Option<String> {
         let client = Client::new(self.sock.as_ref()?).ok()?;
         let res = if refresh {
-            client.refresh(target).await
+            client.refresh_at(target, seek).await
         } else {
-            client.resolve(target).await
+            client.resolve_at(target, seek).await
         };
         res.ok().map(|r| r.direct)
     }
 
-    async fn ask(&self, target: &str, refresh: bool) -> Option<String> {
-        if let Some(direct) = self.ask_daemon(target, refresh).await {
+    async fn ask(&self, target: &str, refresh: bool, seek: bool) -> Option<String> {
+        if let Some(direct) = self.ask_daemon(target, refresh, seek).await {
             return Some(direct);
         }
         linkres::resolve(target, &self.user_agent)
@@ -49,11 +57,19 @@ impl DaemonResolver {
 
 impl Resolver for DaemonResolver {
     async fn resolve(&self, target: &str) -> Option<String> {
-        self.ask(target, false).await
+        self.resolve_at(target, false).await
+    }
+
+    async fn resolve_at(&self, target: &str, seek: bool) -> Option<String> {
+        self.ask(target, false, seek).await
     }
 
     async fn refresh(&self, target: &str) -> Option<String> {
-        self.ask(target, true).await
+        self.ask(target, true, false).await
+    }
+
+    async fn refresh_at(&self, target: &str, seek: bool) -> Option<String> {
+        self.ask(target, true, seek).await
     }
 
     async fn dead(&self, target: &str) {
@@ -74,6 +90,9 @@ pub struct Swap {
     pub direct: String,
     /// argv position of the replaced input
     pub arg_index: usize,
+    /// set when a `-ss` sat in front of this input: playback opened past
+    /// the start, which is a seek rather than a read from byte zero
+    pub seek: bool,
 }
 
 /// Replaces every "-i <path>.strm" input with a resolved direct link and
@@ -92,7 +111,7 @@ pub async fn rewrite_args(
     while i < args.len() {
         if args[i] == "-i"
             && let Some(input) = args.get(i + 1)
-            && let Some(swap) = swap_input(input, res, out.len() + 3).await
+            && let Some(swap) = swap_input(input, res, out.len() + 3, seek_before(args, i)).await
         {
             out.extend(["-user_agent", ua, "-i", &swap.direct].map(OsString::from));
             swaps.push(swap);
@@ -106,16 +125,34 @@ pub async fn rewrite_args(
 }
 
 /// Resolves a strm input to a direct link that will land at arg_index.
-async fn swap_input(input: &OsStr, res: &impl Resolver, arg_index: usize) -> Option<Swap> {
+/// Whether a `-ss` sits immediately before this `-i`. That is a seek into
+/// the file; the value is a timestamp, not a byte count, so only the fact
+/// of the seek is kept.
+fn seek_before(args: &[OsString], i_at: usize) -> bool {
+    args.get(i_at.wrapping_sub(2))
+        .is_some_and(|flag| flag == "-ss")
+        && args.get(i_at.wrapping_sub(1)).is_some()
+}
+
+async fn swap_input(
+    input: &OsStr,
+    res: &impl Resolver,
+    arg_index: usize,
+    seek: bool,
+) -> Option<Swap> {
     if !is_strm(&input.to_string_lossy()) {
         return None;
     }
     let target = linkres::parse_strm(input).ok().filter(|t| t.is_remote)?;
-    let direct = res.resolve(&target.value).await.filter(|d| !d.is_empty())?;
+    let direct = res
+        .resolve_at(&target.value, seek)
+        .await
+        .filter(|d| !d.is_empty())?;
     Some(Swap {
         target: target.value,
         direct,
         arg_index,
+        seek,
     })
 }
 
@@ -197,6 +234,7 @@ pub(super) mod tests {
                 target: "http://x/file/ep1".into(),
                 direct: "http://x/dl/fresh".into(),
                 arg_index: 5,
+                seek: false,
             }]
         );
     }

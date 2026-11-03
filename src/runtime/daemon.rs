@@ -35,6 +35,14 @@ pub struct TargetRequest {
     /// on older callers, which book the temporary backoff.
     #[serde(default)]
     pub permanent: bool,
+    /// Byte the caller opened the file at. Absent means the start, which
+    /// is where a scan probe reads. A later byte is a seek.
+    #[serde(default)]
+    pub offset: i64,
+    /// Set by playback. A scan probe leaves it unset, so a cache hit on
+    /// that path is not counted as another read.
+    #[serde(default)]
+    pub playback: bool,
 }
 
 /// The daemon's answer to /resolve and /refresh.
@@ -103,7 +111,13 @@ impl Daemon {
         axum::serve(listener, self.router()).await
     }
 
-    async fn resolve_and_store(&self, target: &str, force: bool) -> Response {
+    async fn resolve_and_store(
+        &self,
+        target: &str,
+        force: bool,
+        offset: i64,
+        playback: bool,
+    ) -> Response {
         let domain = host_of(target);
         let link = match linkres::resolve(target, &self.ua).await {
             Ok(link) => link,
@@ -121,6 +135,18 @@ impl Daemon {
             }
         };
         self.breakers.record_success(&domain);
+        // A scan probe reads one byte at the start. Playback reads the file:
+        // the size the headers reported, and a seek when it opened past the
+        // start. The quota still counts requests only.
+        let (bytes, seek) = if playback {
+            (link.size, offset > 0)
+        } else {
+            (1, false)
+        };
+        let _ = force;
+        if let Err(e) = self.note_read(&domain, bytes, i64::from(seek)) {
+            return error(StatusCode::INTERNAL_SERVER_ERROR, e);
+        }
         if let Err(e) = self.cache.clear_failure(target) {
             return error(StatusCode::INTERNAL_SERVER_ERROR, e);
         }
@@ -129,6 +155,7 @@ impl Daemon {
             direct: link.url.clone(),
             ua: self.ua.clone(),
             expires_at: link.expires_at,
+            size: link.size,
             ..Default::default()
         };
         if let Err(e) = self.cache.put(&entry) {
@@ -140,6 +167,14 @@ impl Daemon {
             cached: force,
         })
     }
+
+    /// Books one cloud read. `bytes` is the size the headers reported.
+    /// `offset` above zero is a seek: the caller opened past the start.
+    /// The quota is not touched here.
+    fn note_read(&self, domain: &str, bytes: i64, offset: i64) -> rusqlite::Result<()> {
+        self.cache
+            .record_read(domain, bytes, offset > 0, SystemTime::now())
+    }
 }
 
 async fn handle_resolve(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
@@ -150,6 +185,15 @@ async fn handle_resolve(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
     match d.cache.get(&req.target) {
         Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, e),
         Ok(Some(entry)) => {
+            // A cache hit on the scan path reads nothing new: the probe
+            // already counted its one byte. Playback passes where it opened,
+            // and that open is the read, from the start or from later on.
+            // The quota is not touched.
+            if req.playback
+                && let Err(e) = d.note_read(&host_of(&req.target), entry.size, req.offset)
+            {
+                return error(StatusCode::INTERNAL_SERVER_ERROR, e);
+            }
             return json(&Resolved {
                 direct: entry.direct,
                 expires_at: entry.expires_at,
@@ -188,14 +232,18 @@ async fn handle_resolve(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
             format!("quota exceeded for {domain}"),
         );
     }
-    d.resolve_and_store(&req.target, false).await
+    d.resolve_and_store(&req.target, false, req.offset, req.playback)
+        .await
 }
 
 /// Re-resolves unconditionally; called when playback hit a dead link.
 /// Never called in bulk.
 async fn handle_refresh(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
     match decode(&body) {
-        Ok(req) => d.resolve_and_store(&req.target, true).await,
+        Ok(req) => {
+            d.resolve_and_store(&req.target, true, req.offset, true)
+                .await
+        }
         Err(e) => error(StatusCode::BAD_REQUEST, e),
     }
 }

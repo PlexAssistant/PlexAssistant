@@ -35,12 +35,22 @@ impl Client {
 
     /// Returns the cached or freshly resolved link.
     pub async fn resolve(&self, target: &str) -> Result<Resolved, ClientError> {
-        self.post("resolve", target).await
+        self.resolve_at(target, false).await
+    }
+
+    /// Returns the link and records `seek` when playback opened past the start.
+    pub async fn resolve_at(&self, target: &str, seek: bool) -> Result<Resolved, ClientError> {
+        self.post("resolve", target, i64::from(seek), true).await
     }
 
     /// Forces a re-resolve (dead link during playback).
     pub async fn refresh(&self, target: &str) -> Result<Resolved, ClientError> {
-        self.post("refresh", target).await
+        self.refresh_at(target, false).await
+    }
+
+    /// Forces a re-resolve. `seek` records that playback opened past the start.
+    pub async fn refresh_at(&self, target: &str, seek: bool) -> Result<Resolved, ClientError> {
+        self.post("refresh", target, i64::from(seek), true).await
     }
 
     /// Records a dead cached link for ledger backoff.
@@ -57,6 +67,7 @@ impl Client {
         let body = serde_json::to_vec(&TargetRequest {
             target: target.to_owned(),
             permanent,
+            ..Default::default()
         })?;
         let resp = self
             .http
@@ -74,9 +85,17 @@ impl Client {
         Ok(())
     }
 
-    async fn post(&self, method: &'static str, target: &str) -> Result<Resolved, ClientError> {
+    async fn post(
+        &self,
+        method: &'static str,
+        target: &str,
+        offset: i64,
+        playback: bool,
+    ) -> Result<Resolved, ClientError> {
         let body = serde_json::to_vec(&TargetRequest {
             target: target.to_owned(),
+            offset,
+            playback,
             ..Default::default()
         })?;
         let resp = self
