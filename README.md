@@ -55,4 +55,7 @@ on its own.
 - Mixed libraries work, but only strm items get the assistant's
   analysis.
 - A few direct-play clients may bypass the server-side transcoder.
-- Intro/credits markers are not implemented yet.
+- Intro markers need `assistant intro --section N`. Credits markers
+  are written during a scan: black window, then the model Plex
+  already stored, then edge density. `ASSISTANT_CREDITS` selects
+  `auto` (default), `heuristic`, or `model`.
