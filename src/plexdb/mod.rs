@@ -95,6 +95,47 @@ impl Db {
         )?;
         stmt.query_map([section_id], |r| r.get(0))?.collect()
     }
+
+    /// Returns the strm parts of every episode in a season, keyed by
+    /// their metadata item id. metadata_items hierarchy: show(2) →
+    /// season(3) → episode(4, parent_id = season id).
+    pub fn strm_episodes_by_season(&self, season_id: i64) -> Result<Vec<(i64, Part)>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT mi.metadata_item_id, p.id, p.media_item_id, p.file, p.size,
+                    IFNULL(p.duration, 0)
+             FROM metadata_items ep
+             JOIN media_items mi ON mi.metadata_item_id = ep.id
+             JOIN media_parts p ON p.media_item_id = mi.id
+             WHERE ep.parent_id = ? AND ep.metadata_type = 4
+               AND LOWER(p.file) LIKE '%.strm'
+             ORDER BY ep.[index]",
+        )?;
+        stmt.query_map([season_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                Part {
+                    id: r.get(1)?,
+                    media_item_id: r.get(2)?,
+                    file: r.get(3)?,
+                    size: r.get(4)?,
+                    duration: r.get(5)?,
+                },
+            ))
+        })?
+        .collect()
+    }
+
+    /// Returns all season ids (metadata_type=3) in a library section.
+    pub fn seasons_by_section(&self, section_id: i64) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT DISTINCT s.id
+             FROM metadata_items s
+             JOIN metadata_items show ON show.id = s.parent_id
+             JOIN library_sections ls ON ls.id = ?
+             WHERE s.metadata_type = 3",
+        )?;
+        stmt.query_map([section_id], |r| r.get(0))?.collect()
+    }
 }
 
 #[cfg(test)]

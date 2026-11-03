@@ -36,6 +36,29 @@ enum Command {
     Transcoder(transcoder::Args),
     Runtime(runtime::Args),
     Install(install::Args),
+    Intro(IntroArgs),
+}
+
+/// Detects intro markers by cross-comparing audio fingerprints of
+/// episodes within each season.
+#[derive(Debug, clap::Args)]
+struct IntroArgs {
+    /// library section id
+    #[arg(long)]
+    section: i64,
+    /// library database path
+    #[arg(long, default_value = crate::plexdb::DEFAULT_PATH)]
+    library_db: std::path::PathBuf,
+    #[arg(long, default_value = "ffmpeg")]
+    ffmpeg: String,
+    #[arg(long, default_value = "fpcalc")]
+    fpcalc: String,
+    #[arg(long, default_value = "ffprobe")]
+    ffprobe: String,
+    #[arg(long, default_value = crate::linkres::DEFAULT_UA)]
+    ua: String,
+    #[arg(long)]
+    runtime_sock: Option<std::path::PathBuf>,
 }
 
 /// Maps argv[0] to a subcommand by basename. Exact symlink names are
@@ -81,11 +104,30 @@ pub async fn run() -> i32 {
         Command::Transcoder(args) => transcoder::run(args, Path::new(&argv0)).await,
         Command::Runtime(args) => runtime::run(args).await,
         Command::Install(args) => install::run(args),
+        Command::Intro(args) => run_intro(args).await,
     };
     result.unwrap_or_else(|e| {
         eprintln!("Error: {e}");
         1
     })
+}
+
+/// Runs intro detection for a library section.
+async fn run_intro(args: IntroArgs) -> CliResult {
+    let mut db = crate::plexdb::Db::open(&args.library_db)?;
+    let sock = args.runtime_sock;
+    let n = crate::scanner::intro::detect_section_intros(
+        &mut db,
+        args.section,
+        &args.ffmpeg,
+        &args.fpcalc,
+        &args.ffprobe,
+        &args.ua,
+        sock.as_ref(),
+    )
+    .await?;
+    println!("intro detection: {n} marker(s) written");
+    Ok(0)
 }
 
 #[cfg(test)]

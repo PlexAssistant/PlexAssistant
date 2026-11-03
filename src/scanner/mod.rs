@@ -4,6 +4,7 @@
 mod analyze;
 pub mod credits;
 mod extra;
+pub mod intro;
 mod lang;
 mod lang_table;
 mod parse;
