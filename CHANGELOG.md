@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-03
+
 ### Added
 
 - A strm part that could not be analysed is booked on its own: how many
@@ -178,6 +180,7 @@
   ffprobe, direct SQLite writes, persistent link cache, cloud-drive
   protection (breaker, ledger, quota), install/verify/revert.
 
+[0.4.2]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.0...v0.3.1
