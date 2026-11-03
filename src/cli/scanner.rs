@@ -179,7 +179,7 @@ async fn run_credits(file: &OsStr) -> CliResult {
         return Ok(0); // nothing to detect; PMS counts this a success
     };
     let ffmpeg = std::env::var("ASSISTANT_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
-    match credits::detect_credits(&ffmpeg, &link.url, &opts.user_agent).await {
+    match credits::detect_credits(&ffmpeg, &opts.ffprobe, &link.url, &opts.user_agent).await {
         Some((start, end)) => {
             db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
             println!("credits: marker {start}-{end} ms on item {item}");
