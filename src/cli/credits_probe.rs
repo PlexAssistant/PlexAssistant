@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::CliResult;
-use crate::scanner::{credits_assets as assets, credits_net as net};
+use crate::scanner::credits::{assets, net};
 
 /// Prints the inputs and outputs of the credits-detection model. This
 /// only checks that the graph can be loaded and run.

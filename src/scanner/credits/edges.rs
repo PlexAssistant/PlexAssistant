@@ -3,10 +3,8 @@
 //! from the tail window and finds sustained runs of high edge density
 //! that stand out from the content's baseline.
 
-use super::frame_source::{self, Frame, FrameSpec};
-
-/// Frames from the tail window to sample.
-const TAIL_SECS: f64 = 600.0;
+use super::TAIL_SECS;
+use super::frames::{self, Frame, FrameSpec};
 
 /// A frame counts as "has text overlay" when its edge density is this
 /// many times the content's running median. Text adds structured
@@ -24,14 +22,9 @@ const MIN_TEXT_FRAMES: usize = 8; // 16 seconds
 /// maps from the tail, find the longest contiguous run of frames whose
 /// edge density exceeds the content baseline, and return it as
 /// (start_ms, end_ms).
-pub async fn detect_credits_visual(
-    ffmpeg: &str,
-    input: &str,
-    ua: &str,
-    duration_secs: f64,
-) -> Option<(i64, i64)> {
+pub async fn detect(ffmpeg: &str, input: &str, ua: &str, duration_secs: f64) -> Option<(i64, i64)> {
     let tail_start = (duration_secs - TAIL_SECS).max(0.0);
-    let frames = frame_source::extract_tail(ffmpeg, input, ua, tail_start, FrameSpec::EDGES)
+    let frames = frames::extract_tail(ffmpeg, input, ua, tail_start, FrameSpec::EDGES)
         .await
         .ok()?;
     detect_in_frames(&frames, FrameSpec::EDGES.step)
