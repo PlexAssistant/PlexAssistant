@@ -276,9 +276,15 @@ pub async fn detect_section_intros(
         }
         println!("season {season_id}: {} strm episode(s)", episodes.len());
 
-        // fingerprint each episode's head
+        // fingerprint each episode's head. An episode whose content has
+        // not changed, or whose marker was set by hand, is not fingerprinted
+        // again; the season still needs two fresh ones to compare.
         let mut fingerprints: Vec<(i64, Vec<u32>)> = Vec::new();
         for (item_id, part) in &episodes {
+            if intro_unchanged(*item_id, part) {
+                println!("  item {item_id}: unchanged, skipping");
+                continue;
+            }
             let link = match resolve(part, ua, sock).await {
                 Some(url) => url,
                 None => {
@@ -323,12 +329,22 @@ pub async fn detect_section_intros(
             let start = starts[starts.len() / 2].max(0.0);
             let end = ends[ends.len() / 2];
 
-            db.write_marker(
-                *item_id,
-                MARKER_INTRO,
-                (start * 1000.0) as i64,
-                (end * 1000.0) as i64,
-            )?;
+            let start_ms = (start * 1000.0) as i64;
+            let end_ms = (end * 1000.0) as i64;
+            db.write_marker(*item_id, MARKER_INTRO, start_ms, end_ms)?;
+            if let Some(part) = episodes.iter().find(|(id, _)| id == item_id)
+                && let Some(cache) = intro_cache()
+                && let Ok(target) = linkres::parse_strm(&part.1.file)
+            {
+                cache.record_marker(
+                    *item_id,
+                    MARKER_INTRO,
+                    start_ms,
+                    end_ms,
+                    &crate::runtime::marker_digest(&target.value),
+                    std::time::SystemTime::now(),
+                )?;
+            }
             written += 1;
             println!(
                 "  item {item_id}: intro {start:.1}-{end:.1}s ({} pairs)",
@@ -337,6 +353,32 @@ pub async fn detect_section_intros(
         }
     }
     Ok(written)
+}
+
+/// Whether this episode's intro marker still stands.
+///
+/// True when the ledger has a row and the strm target is unchanged, or
+/// when the marker was set by hand or stopped. A ledger that cannot be
+/// opened reports false, so detection runs as it did before the ledger.
+fn intro_unchanged(item_id: i64, part: &crate::plexdb::Part) -> bool {
+    let Some(cache) = intro_cache() else {
+        return false;
+    };
+    let Ok(target) = linkres::parse_strm(&part.file) else {
+        return false;
+    };
+    let digest = crate::runtime::marker_digest(&target.value);
+    cache.marker_decision(item_id, MARKER_INTRO, &digest).ok()
+        == Some(crate::runtime::MarkerDecision::Skip)
+}
+
+/// The ledger. The path is the one the runtime service uses, overridable
+/// so a scan outside the container can point at its own cache.
+fn intro_cache() -> Option<crate::runtime::Cache> {
+    let path = std::env::var("ASSISTANT_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/config/assistant/cache.db"));
+    crate::runtime::Cache::open(path).ok()
 }
 
 /// Resolves a strm part to a direct link through the daemon or directly.

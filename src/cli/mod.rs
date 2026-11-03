@@ -5,6 +5,7 @@
 //! manual invocations use subcommands directly.
 
 mod install;
+mod marker;
 mod runtime;
 mod scanner;
 mod transcoder;
@@ -39,6 +40,8 @@ enum Command {
     Intro(IntroArgs),
     /// Prints the inputs and outputs of the credits-detection model.
     CreditsProbe(CreditsProbeArgs),
+    /// Shows and edits the markers detection booked.
+    Marker(marker::Args),
 }
 
 /// Prints the credits model's inputs and outputs. Detection does not
@@ -120,6 +123,7 @@ pub async fn run() -> i32 {
         Command::Install(args) => install::run(args),
         Command::Intro(args) => run_intro(args).await,
         Command::CreditsProbe(args) => run_credits_probe(args),
+        Command::Marker(args) => marker::run(args),
     };
     result.unwrap_or_else(|e| {
         eprintln!("Error: {e}");
