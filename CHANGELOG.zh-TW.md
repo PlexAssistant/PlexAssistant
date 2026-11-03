@@ -1,6 +1,19 @@
 # 變更日誌
 
-## [Unreleased]
+## [0.3.0] — 2026-11-03
+
+### 新增
+
+- 片尾偵測可以使用 Plex 已經存放的模型(掃描器目錄下的
+  `model_v1.pb`)。分數格超過門檻的比例夠高,該幀就算有文字;
+  標記取連續至少 15 秒的最長一段。
+- `ASSISTANT_CREDITS` 選擇偵測器:`auto`(預設)、`heuristic`、
+  `model`。`model` 在檔案缺失或無法執行時不寫標記。
+
+### 變更
+
+- 預設片尾鏈改為黑窗,然後是已存放的模型,最後才是邊緣偵測。
+  設定 `ASSISTANT_CREDITS=heuristic` 可維持 0.2.2 的鏈。
 
 ### 修正
 
@@ -98,6 +111,8 @@
   SQLite 直寫、持久連結快取、雲端硬碟保護(熔斷器、台帳、
   配額)、install/verify/revert 生命週期。
 
+[0.3.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/PlexAssistant/PlexAssistant/releases/tag/v0.1.0
