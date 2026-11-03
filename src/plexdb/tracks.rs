@@ -10,132 +10,6 @@ use rusqlite::{OptionalExtension, params};
 
 use super::{Db, WriteError};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn db(dir: &std::path::Path) -> Db {
-        let db = Db::open(dir.join("lib.db")).unwrap();
-        db.conn
-            .execute_batch(
-                r#"CREATE TABLE schema_migrations (version varchar(255) NOT NULL);
-                INSERT INTO schema_migrations VALUES ('500000000001.231');
-                CREATE TABLE metadata_items (
-                  id INTEGER PRIMARY KEY, parent_id INTEGER, metadata_type INTEGER, guid TEXT);
-                INSERT INTO metadata_items VALUES (1, NULL, 2, 'show');
-                INSERT INTO metadata_items VALUES (2, 1, 3, 'season');
-                INSERT INTO metadata_items VALUES (42, 2, 4, 'ep');
-                CREATE TABLE media_streams (
-                  id INTEGER PRIMARY KEY, stream_type_id INTEGER, media_part_id INTEGER,
-                  language TEXT, "index" INTEGER, codec TEXT);
-                INSERT INTO media_streams VALUES (10, 2, 70, 'ja', 2, 'aac');
-                INSERT INTO media_streams VALUES (11, 3, 70, 'en', 3, 'srt');
-                INSERT INTO media_streams VALUES (20, 2, 71, 'ja', 2, 'aac');
-                INSERT INTO media_streams VALUES (21, 2, 71, 'en', 1, 'aac');
-                INSERT INTO media_streams VALUES (30, 2, 72, 'de', 1, 'aac');
-                CREATE TABLE media_part_settings (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  account_id INTEGER, media_part_id INTEGER,
-                  selected_audio_stream_id INTEGER, selected_subtitle_stream_id INTEGER,
-                  settings TEXT, created_at INTEGER, updated_at INTEGER, changed_at INTEGER);"#,
-            )
-            .unwrap();
-        db
-    }
-
-    #[test]
-    fn an_episode_names_its_show() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = db(dir.path());
-        assert_eq!(db.show_of_item(42).unwrap(), Some(1));
-        assert_eq!(db.show_of_item(1).unwrap(), None);
-    }
-
-    #[test]
-    fn a_choice_matches_language_and_index() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = db(dir.path());
-        let ja = TrackChoice {
-            type_id: 2,
-            language: "ja".into(),
-            index: 2,
-            codec: "aac".into(),
-        };
-        assert_eq!(db.match_track(71, &ja).unwrap(), Some(20));
-        // one audio stream, and it is not the remembered one: still the track
-        let only = TrackChoice {
-            type_id: 2,
-            language: "ja".into(),
-            index: 9,
-            codec: "aac".into(),
-        };
-        assert_eq!(db.match_track(72, &only).unwrap(), Some(30));
-        // two audio streams and neither is the remembered one: do not guess
-        assert_eq!(db.match_track(71, &only).unwrap(), None);
-    }
-
-    #[test]
-    fn retarget_keeps_a_side_that_did_not_match() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = db(dir.path());
-        db.conn
-            .execute(
-                "INSERT INTO media_part_settings
-                    (account_id, media_part_id, selected_audio_stream_id, selected_subtitle_stream_id)
-                 VALUES (1, 70, 10, 11)",
-                [],
-            )
-            .unwrap();
-        db.retarget_selection(1, 70, Some(20), None).unwrap();
-        let (audio, subtitle): (i64, i64) = db
-            .conn
-            .query_row(
-                "SELECT selected_audio_stream_id, selected_subtitle_stream_id
-                 FROM media_part_settings WHERE account_id=1 AND media_part_id=70",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!((audio, subtitle), (20, 11));
-    }
-
-    #[test]
-    fn a_remembered_choice_fills_an_empty_part_only() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = db(dir.path());
-        db.apply_remembered(1, 71, Some(20), None).unwrap();
-        db.conn
-            .execute(
-                "INSERT INTO media_part_settings
-                    (account_id, media_part_id, selected_audio_stream_id)
-                 VALUES (2, 71, 21)",
-                [],
-            )
-            .unwrap();
-        db.apply_remembered(2, 71, Some(20), Some(99)).unwrap();
-        let picked: i64 = db
-            .conn
-            .query_row(
-                "SELECT selected_audio_stream_id FROM media_part_settings
-                 WHERE account_id=2 AND media_part_id=71",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(picked, 21);
-        let filled: i64 = db
-            .conn
-            .query_row(
-                "SELECT selected_audio_stream_id FROM media_part_settings
-                 WHERE account_id=1 AND media_part_id=71",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(filled, 20);
-    }
-}
-
 /// One selected stream, as far as another part can recognise it.
 ///
 /// Stream ids differ per part. Language and the stream's own index do not,
@@ -350,5 +224,131 @@ impl Db {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db(dir: &std::path::Path) -> Db {
+        let db = Db::open(dir.join("lib.db")).unwrap();
+        db.conn
+            .execute_batch(
+                r#"CREATE TABLE schema_migrations (version varchar(255) NOT NULL);
+                INSERT INTO schema_migrations VALUES ('500000000001.231');
+                CREATE TABLE metadata_items (
+                  id INTEGER PRIMARY KEY, parent_id INTEGER, metadata_type INTEGER, guid TEXT);
+                INSERT INTO metadata_items VALUES (1, NULL, 2, 'show');
+                INSERT INTO metadata_items VALUES (2, 1, 3, 'season');
+                INSERT INTO metadata_items VALUES (42, 2, 4, 'ep');
+                CREATE TABLE media_streams (
+                  id INTEGER PRIMARY KEY, stream_type_id INTEGER, media_part_id INTEGER,
+                  language TEXT, "index" INTEGER, codec TEXT);
+                INSERT INTO media_streams VALUES (10, 2, 70, 'ja', 2, 'aac');
+                INSERT INTO media_streams VALUES (11, 3, 70, 'en', 3, 'srt');
+                INSERT INTO media_streams VALUES (20, 2, 71, 'ja', 2, 'aac');
+                INSERT INTO media_streams VALUES (21, 2, 71, 'en', 1, 'aac');
+                INSERT INTO media_streams VALUES (30, 2, 72, 'de', 1, 'aac');
+                CREATE TABLE media_part_settings (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  account_id INTEGER, media_part_id INTEGER,
+                  selected_audio_stream_id INTEGER, selected_subtitle_stream_id INTEGER,
+                  settings TEXT, created_at INTEGER, updated_at INTEGER, changed_at INTEGER);"#,
+            )
+            .unwrap();
+        db
+    }
+
+    #[test]
+    fn an_episode_names_its_show() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db(dir.path());
+        assert_eq!(db.show_of_item(42).unwrap(), Some(1));
+        assert_eq!(db.show_of_item(1).unwrap(), None);
+    }
+
+    #[test]
+    fn a_choice_matches_language_and_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db(dir.path());
+        let ja = TrackChoice {
+            type_id: 2,
+            language: "ja".into(),
+            index: 2,
+            codec: "aac".into(),
+        };
+        assert_eq!(db.match_track(71, &ja).unwrap(), Some(20));
+        // one audio stream, and it is not the remembered one: still the track
+        let only = TrackChoice {
+            type_id: 2,
+            language: "ja".into(),
+            index: 9,
+            codec: "aac".into(),
+        };
+        assert_eq!(db.match_track(72, &only).unwrap(), Some(30));
+        // two audio streams and neither is the remembered one: do not guess
+        assert_eq!(db.match_track(71, &only).unwrap(), None);
+    }
+
+    #[test]
+    fn retarget_keeps_a_side_that_did_not_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db(dir.path());
+        db.conn
+            .execute(
+                "INSERT INTO media_part_settings
+                    (account_id, media_part_id, selected_audio_stream_id, selected_subtitle_stream_id)
+                 VALUES (1, 70, 10, 11)",
+                [],
+            )
+            .unwrap();
+        db.retarget_selection(1, 70, Some(20), None).unwrap();
+        let (audio, subtitle): (i64, i64) = db
+            .conn
+            .query_row(
+                "SELECT selected_audio_stream_id, selected_subtitle_stream_id
+                 FROM media_part_settings WHERE account_id=1 AND media_part_id=70",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((audio, subtitle), (20, 11));
+    }
+
+    #[test]
+    fn a_remembered_choice_fills_an_empty_part_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db(dir.path());
+        db.apply_remembered(1, 71, Some(20), None).unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO media_part_settings
+                    (account_id, media_part_id, selected_audio_stream_id)
+                 VALUES (2, 71, 21)",
+                [],
+            )
+            .unwrap();
+        db.apply_remembered(2, 71, Some(20), Some(99)).unwrap();
+        let picked: i64 = db
+            .conn
+            .query_row(
+                "SELECT selected_audio_stream_id FROM media_part_settings
+                 WHERE account_id=2 AND media_part_id=71",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(picked, 21);
+        let filled: i64 = db
+            .conn
+            .query_row(
+                "SELECT selected_audio_stream_id FROM media_part_settings
+                 WHERE account_id=1 AND media_part_id=71",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(filled, 20);
     }
 }
