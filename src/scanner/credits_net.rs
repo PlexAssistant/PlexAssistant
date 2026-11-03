@@ -76,6 +76,101 @@ impl Plan {
         let hot = map.iter().filter(|value| **value > threshold).count();
         Ok(hot as f32 / map.len() as f32)
     }
+
+    /// Both outputs of one frame, in graph order: the score map, then the
+    /// geometry tensor.
+    ///
+    /// The score map is `80×80`. Geometry is `80×80×5`, cell-major, and is
+    /// returned flat. [`box_of`] turns one cell of it into a rectangle.
+    /// Callers that only need a window still use [`score`].
+    pub fn maps(&self, rgb: &[u8]) -> Result<(Vec<f32>, Vec<f32>), NetError> {
+        if rgb.len() != FRAME_BYTES {
+            return Err(anyhow!("frame is {} bytes, expected {FRAME_BYTES}", rgb.len()).into());
+        }
+        let values: Vec<f32> = rgb.iter().map(|byte| f32::from(*byte)).collect();
+        let input = Tensor::from_shape(&[1, CANVAS, CANVAS, 3], &values)?;
+        let outputs = self.plan.run(tvec!(input.into_tvalue()))?;
+        let score = outputs
+            .first()
+            .ok_or_else(|| anyhow!("graph returned no outputs"))?
+            .to_plain_array_view::<f32>()?
+            .iter()
+            .copied()
+            .collect();
+        let geometry = outputs
+            .get(1)
+            .ok_or_else(|| anyhow!("graph returned no geometry"))?
+            .to_plain_array_view::<f32>()?
+            .iter()
+            .copied()
+            .collect();
+        Ok((score, geometry))
+    }
+}
+
+/// Cells along one side of the score map and the geometry tensor.
+pub const GRID: usize = 80;
+
+/// Pixels on the canvas per grid cell. The canvas is [`CANVAS`] wide and the
+/// grid is [`GRID`] cells, so a cell covers four pixels.
+pub const CELL: f32 = CANVAS as f32 / GRID as f32;
+
+/// One cell of the geometry tensor, as a rectangle on the canvas.
+///
+/// `cell` counts across the row-major 80×80 grid. The five channels are the
+/// distance up, left, down and right from that cell's centre, in canvas
+/// pixels, then a rotation in radians. The rotation is not applied: the
+/// credits this graph sees sit level, and the fifth channel stays near zero
+/// there.
+pub fn box_of(geometry: &[f32], cell: usize) -> Option<(f32, f32, f32, f32)> {
+    let base = cell * 5;
+    let ch = geometry.get(base..base + 5)?;
+    let col = (cell % GRID) as f32;
+    let row = (cell / GRID) as f32;
+    let cx = (col + 0.5) * CELL;
+    let cy = (row + 0.5) * CELL;
+    let (up, left, down, right) = (ch[0], ch[1], ch[2], ch[3]);
+    Some((cx - left, cy - up, cx + right, cy + down))
+}
+
+/// The rectangle the hot cells agree on, as `(x0, y0, x1, y1)`.
+///
+/// A cell is hot when its score clears `threshold`. Each such cell names the
+/// box around the text nearest to it, and a cell at the end of a line names a
+/// box that runs off the text, so the frame's text is the median of those
+/// edges rather than the widest of them. Returns nothing when no cell is hot.
+pub fn bounds_of(score: &[f32], geometry: &[f32], threshold: f32) -> Option<(f32, f32, f32, f32)> {
+    let mut xs0 = Vec::new();
+    let mut ys0 = Vec::new();
+    let mut xs1 = Vec::new();
+    let mut ys1 = Vec::new();
+    for (cell, &value) in score.iter().enumerate() {
+        if value <= threshold {
+            continue;
+        }
+        let Some((x0, y0, x1, y1)) = box_of(geometry, cell) else {
+            continue;
+        };
+        xs0.push(x0);
+        ys0.push(y0);
+        xs1.push(x1);
+        ys1.push(y1);
+    }
+    Some((
+        median(&mut xs0)?,
+        median(&mut ys0)?,
+        median(&mut xs1)?,
+        median(&mut ys1)?,
+    ))
+}
+
+/// The middle value. `values` is sorted in place and must not be empty.
+fn median(values: &mut [f32]) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    Some(values[values.len() / 2])
 }
 
 /// Loads `path` into a plan that can score a frame.
