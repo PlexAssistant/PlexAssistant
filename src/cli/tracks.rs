@@ -16,7 +16,7 @@ use crate::runtime::Cache;
 #[derive(Debug, clap::Args)]
 pub struct Args {
     /// ledger database; the assistant's cache
-    #[arg(long, default_value = "/config/assistant/cache.db")]
+    #[arg(long, default_value = crate::runtime::DEFAULT_CACHE)]
     cache: PathBuf,
     /// library database the previous stream ids are written back to
     #[arg(long, default_value = crate::plexdb::DEFAULT_PATH)]

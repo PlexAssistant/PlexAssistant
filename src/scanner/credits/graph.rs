@@ -6,9 +6,9 @@
 //! The geometry output places the text inside the first and last frame of
 //! that run, which pulls the window's ends off the two-second sample grid.
 
-use super::credits::TAIL_WINDOW_SECS;
-use super::credits_net::Plan;
-use super::frame_source::{self, Frame, FrameSpec};
+use super::TAIL_SECS;
+use super::frames::{self, Frame, FrameSpec};
+use super::net::{self, Plan};
 
 /// A score cell counts as text at this confidence.
 const SCORE_THRESHOLD: f32 = 0.5;
@@ -39,12 +39,12 @@ pub async fn detect(
     ua: &str,
     duration_secs: f64,
 ) -> std::io::Result<Option<(i64, i64)>> {
-    let tail_start = (duration_secs - TAIL_WINDOW_SECS).max(0.0);
-    let frames = frame_source::extract_tail(ffmpeg, input, ua, tail_start, FrameSpec::RGB).await?;
+    let tail_start = (duration_secs - TAIL_SECS).max(0.0);
+    let frames = frames::extract_tail(ffmpeg, input, ua, tail_start, FrameSpec::RGB).await?;
     let square: Vec<Vec<u8>> = frames
         .iter()
         .filter_map(|frame| {
-            frame_source::pad_square(&frame.bytes, FrameSpec::RGB.width, FrameSpec::RGB.height)
+            frames::pad_square(&frame.bytes, FrameSpec::RGB.width, FrameSpec::RGB.height)
         })
         .collect();
     let scored = square
@@ -85,8 +85,7 @@ fn hot_share(score: &[f32], threshold: f32) -> f32 {
 /// Nothing when the frame has no hot cell. The centre is what moves as
 /// credits scroll, so it is what places the window inside a sampled frame.
 fn text_centre(score: &[f32], geometry: &[f32], threshold: f32) -> Option<f32> {
-    let (y0, y1) =
-        super::credits_net::bounds_of(score, geometry, threshold).map(|(_, y0, _, y1)| (y0, y1))?;
+    let (y0, y1) = net::bounds_of(score, geometry, threshold).map(|(_, y0, _, y1)| (y0, y1))?;
     Some((y0 + y1) / 2.0)
 }
 
@@ -123,11 +122,11 @@ fn tighten(
     let moved = centres
         .windows(2)
         .filter_map(|pair| Some(pair[1]? - pair[0]?))
-        .filter(|step| step.abs() < super::credits_net::CANVAS as f32 * 0.5)
+        .filter(|step| step.abs() < net::CANVAS as f32 * 0.5)
         .sum::<f32>();
     // Less than a tenth of the frame over the whole run is a line standing
     // still, or noise in the box, not a scroll.
-    if moved.abs() < super::credits_net::CANVAS as f32 * 0.1 {
+    if moved.abs() < net::CANVAS as f32 * 0.1 {
         return Some((start_ms, end_ms));
     }
     // Both ends are late by the fraction of the frame the line there had not
@@ -137,7 +136,7 @@ fn tighten(
     // the last frame, and that frame's fraction says how much of the step was
     // real text.
     let correct = |centre: f32| -> i64 {
-        let crossed = centre / super::credits_net::CANVAS as f32;
+        let crossed = centre / net::CANVAS as f32;
         let pending = if moved < 0.0 { crossed } else { 1.0 - crossed };
         (pending.clamp(0.0, 1.0) as f64 * step * 1000.0) as i64
     };

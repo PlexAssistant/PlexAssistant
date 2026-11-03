@@ -16,7 +16,7 @@ use crate::runtime::{Cache, MarkerOrigin, marker_digest};
 #[derive(Debug, clap::Args)]
 pub struct Args {
     /// ledger database; the assistant's cache
-    #[arg(long, default_value = "/config/assistant/cache.db")]
+    #[arg(long, default_value = crate::runtime::DEFAULT_CACHE)]
     cache: PathBuf,
     /// library database, used to resolve an item when setting a marker
     #[arg(long, default_value = crate::plexdb::DEFAULT_PATH)]

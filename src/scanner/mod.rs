@@ -3,13 +3,7 @@
 
 mod analyze;
 pub mod credits;
-pub mod credits_assets;
-pub mod credits_choice;
-pub mod credits_detect;
-pub mod credits_model;
-pub mod credits_net;
 mod extra;
-mod frame_source;
 pub mod intro;
 mod lang;
 mod lang_table;
@@ -18,7 +12,8 @@ mod probe;
 mod spec;
 
 pub use analyze::{
-    AnalyzeError, Options, Probed, analyze_item, is_strm, probe_item, resolve_link, write_item,
+    AnalyzeError, Options, Probed, Refreshed, analyze_item, is_strm, probe_item, resolve_link,
+    write_item,
 };
 pub use probe::{
     Disposition, Format, FormatTags, ProbeError, ProbeResult, Stream, Tags, duration_ms, probe,
