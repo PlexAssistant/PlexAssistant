@@ -17,7 +17,9 @@ mod parse;
 mod probe;
 mod spec;
 
-pub use analyze::{AnalyzeError, Options, analyze_item, is_strm, resolve_link};
+pub use analyze::{
+    AnalyzeError, Options, Probed, analyze_item, is_strm, probe_item, resolve_link, write_item,
+};
 pub use probe::{
     Disposition, Format, FormatTags, ProbeError, ProbeResult, Stream, Tags, duration_ms, probe,
 };
