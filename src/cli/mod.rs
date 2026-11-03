@@ -132,8 +132,8 @@ fn run_credits_probe(args: CreditsProbeArgs) -> CliResult {
     let path = args
         .model
         .unwrap_or_else(|| crate::scanner::credits_assets::path(&args.config));
-    let signature = crate::scanner::credits_net::signature(&path)?;
-    println!("{signature}");
+    let plan = crate::scanner::credits_net::load(&path)?;
+    println!("{}", plan.signature());
     Ok(0)
 }
 

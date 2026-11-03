@@ -47,6 +47,18 @@ impl FrameSpec {
         step: 2.0,
     };
 
+    /// RGB frames for the credits graph: 320×320, three bytes per pixel,
+    /// sampled twice a second. Values stay in source order; the graph
+    /// reads them as 0–255.
+    pub const RGB: Self = Self {
+        width: 320,
+        height: 320,
+        bytes_per_pixel: 3,
+        filter: "fps=0.5,scale=320:320:force_original_aspect_ratio=decrease,\
+                  pad=320:320:(ow-iw)/2:(oh-ih)/2,format=rgb24",
+        step: 2.0,
+    };
+
     fn frame_bytes(self) -> usize {
         self.width * self.height * self.bytes_per_pixel
     }

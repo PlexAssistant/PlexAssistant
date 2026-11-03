@@ -185,9 +185,14 @@ async fn run_credits(file: &OsStr) -> CliResult {
             println!("credits: marker {start}-{end} ms on item {item}");
         }
         None => {
-            // no black window; fall back to edge-density analysis
+            // no black window; the graph when it is stored, edges otherwise
             let duration = input_duration(&opts.ffprobe, &link.url, &opts.user_agent).await;
-            match scanner::credits_model::detect_credits_visual(
+            if let Some((start, end)) =
+                detect_with_graph(&ffmpeg, &link.url, &opts.user_agent, duration).await
+            {
+                db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
+                println!("credits: marker {start}-{end} ms on item {item}");
+            } else if let Some((start, end)) = scanner::credits_model::detect_credits_visual(
                 &ffmpeg,
                 &link.url,
                 &opts.user_agent,
@@ -195,15 +200,34 @@ async fn run_credits(file: &OsStr) -> CliResult {
             )
             .await
             {
-                Some((start, end)) => {
-                    db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
-                    println!("credits: visual marker {start}-{end} ms on item {item}");
-                }
-                None => println!("credits: no window found for {file_str}"),
+                db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
+                println!("credits: visual marker {start}-{end} ms on item {item}");
+            } else {
+                println!("credits: no window found for {file_str}");
             }
         }
     }
     Ok(0)
+}
+
+/// The graph's credits window, when the stored model loads and finds one.
+///
+/// A missing model, a graph that will not run, or a failed extraction
+/// all return `None`, so the caller falls through to the edge detector.
+async fn detect_with_graph(
+    ffmpeg: &str,
+    input: &str,
+    ua: &str,
+    duration_secs: f64,
+) -> Option<(i64, i64)> {
+    let path = scanner::credits_assets::path(std::path::Path::new(
+        scanner::credits_assets::DEFAULT_CONFIG,
+    ));
+    let stored = scanner::credits_assets::load(&path).await.ok()??;
+    let plan = scanner::credits_net::load(&stored.path).ok()?;
+    scanner::credits_detect::detect(&plan, ffmpeg, input, ua, duration_secs)
+        .await
+        .ok()?
 }
 
 /// Duration in seconds via ffprobe.
