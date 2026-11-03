@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Resolving a link through the daemon cache now checks the cached
+  expiry: a link past its expiry gets one eager refresh instead of
+  being handed to ffprobe as-is. Credits detection fired long after
+  the scan that cached the link no longer fails silently on a stale
+  signed URL.
+
 ## [0.2.2] — 2026-11-03
 
 ### Fixed

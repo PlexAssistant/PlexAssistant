@@ -159,19 +159,38 @@ fn is_dead_link(e: &ProbeError) -> bool {
 }
 
 /// Asks the daemon first (its persistent cache saves upstream
-/// resolutions), falling back to resolving directly.
+/// resolutions), falling back to resolving directly. A cached link past
+/// its expiry is a guaranteed upstream failure, so it gets one eager
+/// refresh; if that fails, the expired link is still the best we have
+/// and the consumer's failure heal takes over from there.
 pub async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
     if let Some(sock) = &opts.runtime_sock
         && let Some(client) = shared_client(sock)
         && let Ok(res) = client.resolve(target).await
     {
-        return Some(Link {
-            url: res.direct,
-            expires_at: res.expires_at,
-            ..Default::default()
+        if res.expires_at == 0 || res.expires_at > now_secs() {
+            return Some(Link {
+                url: res.direct,
+                expires_at: res.expires_at,
+                ..Default::default()
+            });
+        }
+        return refresh_link(target, opts).await.or_else(|| {
+            Some(Link {
+                url: res.direct,
+                expires_at: res.expires_at,
+                ..Default::default()
+            })
         });
     }
     linkres::resolve(target, &opts.user_agent).await.ok()
+}
+
+/// Wall-clock unix seconds; 0 on a clock before the epoch.
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 /// The scan-side heal: same shape as resolve_link but forcing a fresh
@@ -366,6 +385,84 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(probed_url).unwrap().trim(),
             "http://cached/dl/ep1"
+        );
+    }
+
+    /// A cached link past its expiry is never handed to the probe: it
+    /// refreshes eagerly, so a credits run fired long after the scan
+    /// that cached the link still sees a working one.
+    #[tokio::test]
+    async fn expired_cache_entry_refreshes_eagerly() {
+        // upstream signs fresh links under /dl/fresh-*
+        let app = Router::new()
+            .route(
+                "/file/{id}",
+                get(|UrlPath(id): UrlPath<String>| async move {
+                    (
+                        StatusCode::FOUND,
+                        [(header::LOCATION, format!("/dl/fresh-{id}"))],
+                    )
+                }),
+            )
+            .route(
+                "/dl/{id}",
+                get(|| async {
+                    (
+                        StatusCode::PARTIAL_CONTENT,
+                        [(header::CONTENT_RANGE, "bytes 0-0/10")],
+                        "0",
+                    )
+                        .into_response()
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = format!("{base}/file/ep1");
+        let strm = dir.path().join("ep1.strm");
+        std::fs::write(&strm, &target).unwrap();
+        let mut db = library(dir.path(), &[&strm]);
+
+        // the cache holds a link that expired long ago
+        let cache = Cache::open(dir.path().join("cache.db")).unwrap();
+        cache
+            .put(&Entry {
+                target: target.clone(),
+                direct: format!("{base}/dl/stale"),
+                expires_at: 1000,
+                ..Default::default()
+            })
+            .unwrap();
+        let sock = dir.path().join("assistant.sock");
+        let listener = tokio::net::UnixListener::bind(&sock).unwrap();
+        let daemon = Daemon::new(Arc::new(cache), "", 30);
+        tokio::spawn(async move { axum::serve(listener, daemon.router()).await.unwrap() });
+
+        let probed_url = dir.path().join("probed");
+        let opts = Options {
+            ffprobe: fake_ffprobe(
+                &dir,
+                &format!(
+                    "for a; do last=$a; done; echo \"$last\" > '{}'\ncat <<'JSON'\n{SAMPLE_PROBE_JSON}\nJSON",
+                    probed_url.display()
+                ),
+            ),
+            user_agent: linkres::DEFAULT_UA.into(),
+            runtime_sock: Some(sock),
+        };
+
+        assert_eq!(
+            analyze_item(&mut db, 42, &opts, &mut Default::default())
+                .await
+                .unwrap(),
+            1
+        );
+        // the stale link never reached ffprobe
+        assert_eq!(
+            std::fs::read_to_string(probed_url).unwrap().trim(),
+            format!("{base}/dl/fresh-ep1")
         );
     }
 
