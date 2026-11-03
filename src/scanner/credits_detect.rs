@@ -41,9 +41,15 @@ pub async fn detect(
 ) -> std::io::Result<Option<(i64, i64)>> {
     let tail_start = (duration_secs - TAIL_WINDOW_SECS).max(0.0);
     let frames = frame_source::extract_tail(ffmpeg, input, ua, tail_start, FrameSpec::RGB).await?;
-    let scored = frames
+    let square: Vec<Vec<u8>> = frames
         .iter()
-        .map(|frame| plan.maps(&frame.bytes))
+        .filter_map(|frame| {
+            frame_source::pad_square(&frame.bytes, FrameSpec::RGB.width, FrameSpec::RGB.height)
+        })
+        .collect();
+    let scored = square
+        .iter()
+        .map(|frame| plan.maps(frame))
         .collect::<Result<Vec<_>, _>>()
         .map_err(std::io::Error::other)?;
     let shares: Vec<f32> = scored
