@@ -42,7 +42,7 @@ enum Command {
 }
 
 /// Prints the credits model's inputs and outputs. Detection does not
-/// use the result yet; this only checks that the graph loads.
+/// use the result yet; this only checks that the graph can be run.
 #[derive(Debug, clap::Args)]
 struct CreditsProbeArgs {
     /// model file; defaults to the copy under the Plex config root
