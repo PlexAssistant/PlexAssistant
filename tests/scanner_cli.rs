@@ -50,8 +50,13 @@ impl Rig {
         conn.execute_batch(
             r#"CREATE TABLE schema_migrations (version varchar(255) NOT NULL);
             INSERT INTO schema_migrations VALUES ('500000000001.231');
-            CREATE TABLE metadata_items (id INTEGER PRIMARY KEY, duration INTEGER);
-            INSERT INTO metadata_items VALUES (42, NULL);
+            CREATE TABLE metadata_items (id INTEGER PRIMARY KEY, parent_id INTEGER,
+              metadata_type INTEGER, "index" INTEGER, duration INTEGER);
+            INSERT INTO metadata_items VALUES (1, NULL, 2, NULL, NULL);
+            INSERT INTO metadata_items VALUES (2, 1, 3, NULL, NULL);
+            INSERT INTO metadata_items VALUES (42, 2, 4, 1, NULL);
+            CREATE TABLE library_sections (id INTEGER PRIMARY KEY);
+            INSERT INTO library_sections VALUES (1);
             CREATE TABLE media_items (id INTEGER PRIMARY KEY, metadata_item_id INTEGER,
               library_section_id INTEGER,
               width INTEGER, height INTEGER, size INTEGER, duration INTEGER, bitrate INTEGER,

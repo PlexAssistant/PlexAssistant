@@ -2,6 +2,13 @@
 
 ## [未發布]
 
+## [0.4.5] — 2026-11-03
+
+### 修復
+
+- 掃描的整合測試缺了查季時要用的欄位,分析成功後 `cargo test` 仍失敗,
+  發布用的映像沒有建出來。
+
 ## [0.4.4] — 2026-11-03
 
 ### 新增
@@ -176,6 +183,7 @@
   SQLite 直寫、持久連結快取、雲端硬碟保護(熔斷器、台帳、
   配額)、install/verify/revert 生命週期。
 
+[0.4.5]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.1...v0.4.2
