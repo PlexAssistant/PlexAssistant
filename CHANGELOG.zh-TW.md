@@ -1,5 +1,14 @@
 # 變更日誌
 
+## [0.3.1] — 2026-11-03
+
+### 修正
+
+- 無法成功的解析不再走死鏈退避。無法解析的 URL,或上游回應
+  404、410,會一直跳過,直到之後某次成功清除該筆記錄。拒絕、
+  逾時、重導向環仍走 1/2/4/7 天退避。其他原因的探測失敗也同樣
+  記帳,不再每次掃描都重打。
+
 ## [0.3.0] — 2026-11-03
 
 ### 新增
@@ -111,6 +120,7 @@
   SQLite 直寫、持久連結快取、雲端硬碟保護(熔斷器、台帳、
   配額)、install/verify/revert 生命週期。
 
+[0.3.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.2.0...v0.2.1
