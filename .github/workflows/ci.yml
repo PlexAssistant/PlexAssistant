@@ -3,6 +3,9 @@ name: CI
 # Tag-driven only: pushing a v* tag runs the gates and publishes the
 # multi-arch image to ghcr as both the tag and latest. Nothing runs on
 # ordinary pushes or PRs.
+#
+# Runners are pinned (not ubuntu-latest) so image migrations can't
+# shift the build environment under a release.
 on:
   push:
     tags: ['v*']
@@ -12,7 +15,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -34,7 +37,7 @@ jobs:
 
   image:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
