@@ -184,9 +184,35 @@ async fn run_credits(file: &OsStr) -> CliResult {
             db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
             println!("credits: marker {start}-{end} ms on item {item}");
         }
-        None => println!("credits: no window found for {file_str}"),
+        None => {
+            // no black window; fall back to edge-density analysis
+            let duration = input_duration(&opts.ffprobe, &link.url, &opts.user_agent).await;
+            match scanner::credits_model::detect_credits_visual(
+                &ffmpeg,
+                &link.url,
+                &opts.user_agent,
+                duration,
+            )
+            .await
+            {
+                Some((start, end)) => {
+                    db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
+                    println!("credits: visual marker {start}-{end} ms on item {item}");
+                }
+                None => println!("credits: no window found for {file_str}"),
+            }
+        }
     }
     Ok(0)
+}
+
+/// Duration in seconds via ffprobe.
+async fn input_duration(ffprobe: &str, input: &str, ua: &str) -> f64 {
+    use scanner::duration_ms;
+    scanner::probe(ffprobe, input, ua)
+        .await
+        .map(|p| duration_ms(&p.format.duration) as f64 / 1000.0)
+        .unwrap_or(0.0)
 }
 
 async fn analyze_one(
