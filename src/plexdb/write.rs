@@ -2,11 +2,12 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::params;
+use serde::{Deserialize, Serialize};
 
 use super::Db;
 
 /// One media_streams row to write.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct StreamRow {
     /// 1 video, 2 audio, 3 subtitle
     pub type_id: i64,
@@ -23,7 +24,7 @@ pub struct StreamRow {
 
 /// The analyzed media info for one part, shaped exactly like the rows
 /// Plex's own analysis writes.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct WriteSpec {
     pub media_item_id: i64,
     pub part_id: i64,

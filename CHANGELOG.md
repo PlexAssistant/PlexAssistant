@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- A file is recognised by its duration and size, not by the strm URL.
+  The same file under another path, another strm, or a re-added item is
+  written from the stored analysis instead of being probed again. Intro
+  and credits detection uses the same pair, so a resigned link does not
+  run detection again.
+
 ## [0.4.1] — 2026-11-03
 
 ### Changed
