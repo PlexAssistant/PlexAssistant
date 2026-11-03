@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use tokio::process::Command;
 
+use super::{Options, resolve_link};
 use crate::linkres;
-use crate::plexdb::{Db, MARKER_INTRO};
-use crate::runtime::Client;
+use crate::plexdb::{Db, MARKER_INTRO, Part};
+use crate::runtime::{Cache, MarkerDecision, marker_digest};
 
 /// Seconds of audio to fingerprint from the head of each episode.
 /// Most intros live within the first two minutes.
@@ -261,7 +263,6 @@ pub async fn detect_section_intros(
     section_id: i64,
     ffmpeg: &str,
     fpcalc: &str,
-    _ffprobe: &str,
     ua: &str,
     sock: Option<&PathBuf>,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
@@ -283,158 +284,112 @@ pub async fn detect_season_intros(
     ua: &str,
     sock: Option<&PathBuf>,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+    let episodes = db.strm_episodes_by_season(season_id)?;
+    if episodes.len() < 2 {
+        return Ok(0); // need at least two episodes to compare
+    }
+    println!("season {season_id}: {} strm episode(s)", episodes.len());
+
+    // The ledger. A ledger that cannot be opened skips nothing, so
+    // detection runs as it did before the ledger.
+    let cache = Cache::open(crate::runtime::cache_path()).ok();
+    let opts = Options {
+        user_agent: ua.to_owned(),
+        runtime_sock: sock.cloned(),
+        ..Default::default()
+    };
     let tmpdir = tempfile::tempdir().map_err(|e| format!("tmpdir: {e}"))?;
+
+    // fingerprint each episode's head. An episode whose content has
+    // not changed, or whose marker was set by hand, is not fingerprinted
+    // again; the season still needs two fresh ones to compare.
+    let mut fingerprints: Vec<(i64, Vec<u32>)> = Vec::new();
+    for (item_id, part) in &episodes {
+        if cache
+            .as_ref()
+            .is_some_and(|c| intro_unchanged(c, *item_id, part))
+        {
+            println!("  item {item_id}: unchanged, skipping");
+            continue;
+        }
+        let Some(link) = resolve(part, &opts).await else {
+            println!("  item {item_id}: resolve failed, skipping");
+            continue;
+        };
+        match extract_fingerprint(ffmpeg, fpcalc, &link, ua, tmpdir.path()).await {
+            Some(fp) => {
+                println!("  item {item_id}: {} fingerprint entries", fp.len());
+                fingerprints.push((*item_id, fp));
+            }
+            None => println!("  item {item_id}: fingerprint failed"),
+        }
+    }
+    if fingerprints.len() < 2 {
+        return Ok(0);
+    }
+
+    // compare all pairs; each episode collects its own match times
+    let mut matches: HashMap<i64, Vec<(f64, f64)>> = HashMap::new();
+    for (i, (id_a, fp_a)) in fingerprints.iter().enumerate() {
+        for (id_b, fp_b) in &fingerprints[i + 1..] {
+            if let Some(m) = find_common_intro(fp_a, fp_b) {
+                matches.entry(*id_a).or_default().push((m.start_a, m.end_a));
+                matches.entry(*id_b).or_default().push((m.start_b, m.end_b));
+            }
+        }
+    }
+
+    // write each episode's own consensus times
     let mut written = 0;
+    for (item_id, ms) in &matches {
+        let mut starts: Vec<f64> = ms.iter().map(|m| m.0).collect();
+        let mut ends: Vec<f64> = ms.iter().map(|m| m.1).collect();
+        starts.sort_by(f64::total_cmp);
+        ends.sort_by(f64::total_cmp);
+        let start = starts[starts.len() / 2].max(0.0);
+        let end = ends[ends.len() / 2];
 
-    {
-        let episodes = db.strm_episodes_by_season(season_id)?;
-        if episodes.len() < 2 {
-            return Ok(0); // need at least two episodes to compare
+        let start_ms = (start * 1000.0) as i64;
+        let end_ms = (end * 1000.0) as i64;
+        db.write_marker(*item_id, MARKER_INTRO, start_ms, end_ms)?;
+        if let Some((_, part)) = episodes.iter().find(|(id, _)| id == item_id)
+            && let Some(cache) = &cache
+        {
+            cache.record_marker(
+                *item_id,
+                MARKER_INTRO,
+                start_ms,
+                end_ms,
+                &marker_digest(&part.media_key()),
+                SystemTime::now(),
+            )?;
         }
-        println!("season {season_id}: {} strm episode(s)", episodes.len());
-
-        // fingerprint each episode's head. An episode whose content has
-        // not changed, or whose marker was set by hand, is not fingerprinted
-        // again; the season still needs two fresh ones to compare.
-        let mut fingerprints: Vec<(i64, Vec<u32>)> = Vec::new();
-        for (item_id, part) in &episodes {
-            if intro_unchanged(*item_id, part) {
-                println!("  item {item_id}: unchanged, skipping");
-                continue;
-            }
-            let link = match resolve(part, ua, sock).await {
-                Some(url) => url,
-                None => {
-                    println!("  item {item_id}: resolve failed, skipping");
-                    continue;
-                }
-            };
-            match extract_fingerprint(ffmpeg, fpcalc, &link, ua, tmpdir.path()).await {
-                Some(fp) => {
-                    println!("  item {item_id}: {} fingerprint entries", fp.len());
-                    fingerprints.push((*item_id, fp));
-                }
-                None => println!("  item {item_id}: fingerprint failed"),
-            }
-        }
-        if fingerprints.len() < 2 {
-            return Ok(0);
-        }
-
-        // compare all pairs; each episode collects its own match times
-        let mut matches: HashMap<i64, Vec<(f64, f64)>> = HashMap::new();
-        for i in 0..fingerprints.len() {
-            for j in (i + 1)..fingerprints.len() {
-                let (id_a, fp_a) = &fingerprints[i];
-                let (id_b, fp_b) = &fingerprints[j];
-                if let Some(m) = find_common_intro(fp_a, fp_b) {
-                    matches.entry(*id_a).or_default().push((m.start_a, m.end_a));
-                    matches.entry(*id_b).or_default().push((m.start_b, m.end_b));
-                }
-            }
-        }
-
-        // write each episode's own consensus times
-        for (item_id, ms) in &matches {
-            if ms.is_empty() {
-                continue;
-            }
-            let mut starts: Vec<f64> = ms.iter().map(|m| m.0).collect();
-            let mut ends: Vec<f64> = ms.iter().map(|m| m.1).collect();
-            starts.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            ends.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let start = starts[starts.len() / 2].max(0.0);
-            let end = ends[ends.len() / 2];
-
-            let start_ms = (start * 1000.0) as i64;
-            let end_ms = (end * 1000.0) as i64;
-            db.write_marker(*item_id, MARKER_INTRO, start_ms, end_ms)?;
-            if let Some(part) = episodes.iter().find(|(id, _)| id == item_id)
-                && let Some(cache) = intro_cache()
-            {
-                let key = media_key(&part.1);
-                cache.record_marker(
-                    *item_id,
-                    MARKER_INTRO,
-                    start_ms,
-                    end_ms,
-                    &crate::runtime::marker_digest(&key),
-                    std::time::SystemTime::now(),
-                )?;
-            }
-            written += 1;
-            println!(
-                "  item {item_id}: intro {start:.1}-{end:.1}s ({} pairs)",
-                ms.len()
-            );
-        }
+        written += 1;
+        println!(
+            "  item {item_id}: intro {start:.1}-{end:.1}s ({} pairs)",
+            ms.len()
+        );
     }
     Ok(written)
 }
 
 /// Whether this episode's intro marker still stands.
 ///
-/// True when the ledger has a row and the strm target is unchanged, or
-/// when the marker was set by hand or stopped. A ledger that cannot be
-/// opened reports false, so detection runs as it did before the ledger.
-fn intro_unchanged(item_id: i64, part: &crate::plexdb::Part) -> bool {
-    let Some(cache) = intro_cache() else {
-        return false;
-    };
-    let digest = crate::runtime::marker_digest(&media_key(part));
-    cache.marker_decision(item_id, MARKER_INTRO, &digest).ok()
-        == Some(crate::runtime::MarkerDecision::Skip)
+/// True when the ledger has a row and the part's duration and size are
+/// unchanged, or when the marker was set by hand or stopped.
+fn intro_unchanged(cache: &Cache, item_id: i64, part: &Part) -> bool {
+    let digest = marker_digest(&part.media_key());
+    cache.marker_decision(item_id, MARKER_INTRO, &digest).ok() == Some(MarkerDecision::Skip)
 }
 
-/// Duration and size, the pair the content ledger matches on. A part
-/// that has not been analysed yet has nothing stable, so its key is
-/// empty and detection runs.
-fn media_key(part: &crate::plexdb::Part) -> String {
-    if part.duration <= 0 || part.size <= 0 {
-        return String::new();
-    }
-    format!("d={}\ns={}\n", part.duration, part.size)
-}
-
-/// The ledger. The path is the one the runtime service uses, overridable
-/// so a scan outside the container can point at its own cache.
-fn intro_cache() -> Option<crate::runtime::Cache> {
-    let path = std::env::var("ASSISTANT_CACHE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/config/assistant/cache.db"));
-    crate::runtime::Cache::open(path).ok()
-}
-
-/// Resolves a strm part to a direct link through the daemon or directly.
-async fn resolve(part: &crate::plexdb::Part, ua: &str, sock: Option<&PathBuf>) -> Option<String> {
+/// Resolves a strm part to a direct link, through the daemon when one is
+/// reachable. A failure is booked there, so a later scan backs off.
+async fn resolve(part: &Part, opts: &Options) -> Option<String> {
     let target = linkres::parse_strm(&part.file).ok()?;
     if !target.is_remote {
         return None;
     }
-    if let Some(sock) = sock
-        && let Ok(client) = Client::new(sock)
-        && let Ok(res) = client.resolve(&target.value).await
-    {
-        return Some(res.direct);
-    }
-    match linkres::resolve(&target.value, ua).await {
-        Ok(link) => Some(link.url),
-        Err(err) => {
-            // the daemon's ledger is the only place a later scan looks,
-            // so a failure here has to be booked or it is retried forever
-            if let Some(sock) = sock
-                && let Ok(client) = Client::new(sock)
-            {
-                let booked = if err.is_permanent() {
-                    client.dead_permanent(&target.value).await
-                } else {
-                    client.dead(&target.value).await
-                };
-                let _ = booked;
-            }
-            None
-        }
-    }
+    resolve_link(&target.value, opts).await.map(|link| link.url)
 }
 
 #[cfg(test)]

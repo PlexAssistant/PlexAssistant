@@ -33,37 +33,31 @@ impl Client {
         Ok(Self { http })
     }
 
-    /// Returns the cached or freshly resolved link.
+    /// Returns the cached or freshly resolved link for a scan.
     pub async fn resolve(&self, target: &str) -> Result<Resolved, ClientError> {
-        self.resolve_at(target, false).await
+        self.post("resolve", target, 0, false).await
     }
 
-    /// Returns the link and records `seek` when playback opened past the start.
+    /// Returns the link for playback and records `seek` when playback
+    /// opened past the start.
     pub async fn resolve_at(&self, target: &str, seek: bool) -> Result<Resolved, ClientError> {
         self.post("resolve", target, i64::from(seek), true).await
     }
 
-    /// Forces a re-resolve (dead link during playback).
+    /// Forces a re-resolve for a scan whose cached link was dead.
     pub async fn refresh(&self, target: &str) -> Result<Resolved, ClientError> {
-        self.refresh_at(target, false).await
+        self.post("refresh", target, 0, false).await
     }
 
-    /// Forces a re-resolve. `seek` records that playback opened past the start.
+    /// Forces a re-resolve for playback. `seek` records that playback
+    /// opened past the start.
     pub async fn refresh_at(&self, target: &str, seek: bool) -> Result<Resolved, ClientError> {
         self.post("refresh", target, i64::from(seek), true).await
     }
 
-    /// Records a dead cached link for ledger backoff.
-    pub async fn dead(&self, target: &str) -> Result<(), ClientError> {
-        self.book(target, false).await
-    }
-
-    /// Records a failure that will not clear on its own.
-    pub async fn dead_permanent(&self, target: &str) -> Result<(), ClientError> {
-        self.book(target, true).await
-    }
-
-    async fn book(&self, target: &str, permanent: bool) -> Result<(), ClientError> {
+    /// Records a dead target in the ledger. `permanent` marks a failure
+    /// that will not clear on its own; anything else takes the backoff.
+    pub async fn dead(&self, target: &str, permanent: bool) -> Result<(), ClientError> {
         let body = serde_json::to_vec(&TargetRequest {
             target: target.to_owned(),
             permanent,
@@ -119,7 +113,7 @@ impl Client {
 mod tests {
     use super::*;
     use crate::runtime::cache::tests::test_cache;
-    use crate::runtime::{Daemon, Entry};
+    use crate::runtime::{Cache, Daemon, Entry};
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -158,6 +152,28 @@ mod tests {
                 cached: true,
             }
         );
+    }
+
+    /// A scan's cache hit reads nothing new; only playback books a read.
+    #[tokio::test]
+    async fn scan_resolve_is_not_a_playback_read() {
+        let (dir, sock) = daemon_with(&[("http://x/file/ep1", "http://x/dl/ep1")]).await;
+        let client = Client::new(&sock).unwrap();
+        let reads = || {
+            let cache = Cache::open(dir.path().join("assistant/cache.db")).unwrap();
+            let n: i64 = cache
+                .conn()
+                .query_row("SELECT IFNULL(sum(reads), 0) FROM cloud_usage", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            n
+        };
+
+        client.resolve("http://x/file/ep1").await.unwrap();
+        assert_eq!(reads(), 0);
+        client.resolve_at("http://x/file/ep1", false).await.unwrap();
+        assert_eq!(reads(), 1);
     }
 
     #[tokio::test]

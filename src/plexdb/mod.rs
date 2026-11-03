@@ -44,6 +44,18 @@ pub struct Part {
     pub duration: i64,
 }
 
+impl Part {
+    /// Duration and size, the pair the content and marker ledgers match
+    /// on. Empty for a part that has not been analysed yet, so nothing
+    /// matches it and detection runs.
+    pub fn media_key(&self) -> String {
+        if self.duration <= 0 || self.size <= 0 {
+            return String::new();
+        }
+        format!("d={}\ns={}\n", self.duration, self.size)
+    }
+}
+
 impl Db {
     /// Opens the database with the write-safety busy timeout applied.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -144,14 +156,16 @@ impl Db {
         }
     }
 
-    /// Returns all season ids (metadata_type=3) in a library section.
+    /// Returns the ids of the seasons in a library section that have at
+    /// least one episode with media.
     pub fn seasons_by_section(&self, section_id: i64) -> Result<Vec<i64>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT DISTINCT s.id
-             FROM metadata_items s
-             JOIN metadata_items show ON show.id = s.parent_id
-             JOIN library_sections ls ON ls.id = ?
-             WHERE s.metadata_type = 3",
+            "SELECT DISTINCT ep.parent_id
+             FROM media_items mi
+             JOIN metadata_items ep ON ep.id = mi.metadata_item_id
+             WHERE mi.library_section_id = ? AND ep.metadata_type = 4
+               AND ep.parent_id IS NOT NULL
+             ORDER BY ep.parent_id",
         )?;
         stmt.query_map([section_id], |r| r.get(0))?.collect()
     }
@@ -240,6 +254,34 @@ mod tests {
             ]
         );
         assert!(db.parts_by_item(999).unwrap().is_empty());
+    }
+
+    #[test]
+    fn seasons_by_section_stays_in_the_section() {
+        let (_dir, db) = fixture("500000000001.231");
+        db.conn
+            .execute_batch(
+                "CREATE TABLE metadata_items (id INTEGER PRIMARY KEY, parent_id INTEGER,
+                   metadata_type INTEGER);
+                 INSERT INTO metadata_items VALUES (42, 7, 4);
+                 INSERT INTO metadata_items VALUES (43, 8, 4);
+                 INSERT INTO metadata_items VALUES (44, NULL, 1);
+                 INSERT INTO media_items VALUES (2, 43, 2);
+                 INSERT INTO media_items VALUES (3, 44, 2);",
+            )
+            .unwrap();
+        assert_eq!(db.seasons_by_section(1).unwrap(), [7]);
+        // a movie in the same section has no season
+        assert_eq!(db.seasons_by_section(2).unwrap(), [8]);
+        assert!(db.seasons_by_section(3).unwrap().is_empty());
+    }
+
+    #[test]
+    fn media_key_needs_duration_and_size() {
+        let (_dir, db) = fixture("500000000001.231");
+        let parts = db.parts_by_item(42).unwrap();
+        assert_eq!(parts[0].media_key(), "", "no duration yet");
+        assert_eq!(parts[1].media_key(), "d=1200\ns=48\n");
     }
 
     #[test]

@@ -19,6 +19,17 @@ CREATE TABLE IF NOT EXISTS links (
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The cache inside the container.
+pub const DEFAULT_CACHE: &str = "/config/assistant/cache.db";
+
+/// `ASSISTANT_CACHE` when set and not empty, else [`DEFAULT_CACHE`]. Lets
+/// a scan outside the container point at its own cache.
+pub fn cache_path() -> PathBuf {
+    std::env::var_os("ASSISTANT_CACHE")
+        .filter(|v| !v.is_empty())
+        .map_or_else(|| PathBuf::from(DEFAULT_CACHE), PathBuf::from)
+}
+
 /// One cached direct link.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Entry {

@@ -76,6 +76,15 @@ impl Cache {
         self.record(target, FailureKind::Permanent, now)
     }
 
+    /// Books a failure: permanent or temporary, as the caller found it.
+    pub fn record_dead(&self, target: &str, permanent: bool, now: SystemTime) -> Result<()> {
+        if permanent {
+            self.record_permanent(target, now)
+        } else {
+            self.record_failure(target, now)
+        }
+    }
+
     fn record(&self, target: &str, kind: FailureKind, now: SystemTime) -> Result<()> {
         // one lock across read and upsert keeps concurrent counts intact
         let conn = self.conn();

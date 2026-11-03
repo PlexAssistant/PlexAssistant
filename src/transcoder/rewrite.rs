@@ -76,7 +76,7 @@ impl Resolver for DaemonResolver {
         if let Some(sock) = self.sock.as_ref()
             && let Ok(client) = Client::new(sock)
         {
-            let _ = client.dead(target).await;
+            let _ = client.dead(target, false).await;
         }
     }
 }

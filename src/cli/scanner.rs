@@ -3,11 +3,11 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::CliResult;
+use super::{CliResult, env_or};
 use crate::linkres::{self, DEFAULT_UA};
-use crate::plexdb::{self, Db};
+use crate::plexdb::{self, Db, Part};
 use crate::runtime::{self, DEFAULT_SOCK};
-use crate::scanner::{self, Options, credits, is_strm};
+use crate::scanner::{self, Options, Refreshed, credits, is_strm};
 
 /// Run as the Plex Scanner replacement. Item and section analyze
 /// invocations run our strm pipeline; every other mode (matcher, credits,
@@ -38,10 +38,7 @@ impl Default for ScanFlags {
             section: 0,
             item: 0,
             library_db: plexdb::DEFAULT_PATH.into(),
-            ffprobe: std::env::var("ASSISTANT_FFPROBE")
-                .ok()
-                .filter(|v| !v.is_empty())
-                .unwrap_or_else(|| "ffprobe".into()),
+            ffprobe: env_or("ASSISTANT_FFPROBE", "ffprobe"),
             ua: DEFAULT_UA.into(),
             runtime_sock: DEFAULT_SOCK.into(),
         }
@@ -125,18 +122,13 @@ pub async fn run(args: Args) -> CliResult {
         ffprobe: flags.ffprobe,
         user_agent: flags.ua,
         runtime_sock: Some(flags.runtime_sock).filter(|s| !s.as_os_str().is_empty()),
-        cache: std::env::var("ASSISTANT_CACHE")
-            .ok()
-            .map(PathBuf::from)
-            .filter(|p| !p.as_os_str().is_empty()),
+        cache: Some(runtime::cache_path()),
     };
     let mut db = Db::open(&flags.library_db)?;
-    // one refresh budget per target for the whole run
-    let mut refreshed = std::collections::HashSet::new();
     if flags.item > 0 {
-        analyze_one(&mut db, flags.item, &opts, &mut refreshed).await
+        analyze_one(&mut db, flags.item, &opts).await
     } else {
-        analyze_section(&mut db, flags.section, &opts, &mut refreshed).await
+        analyze_section(&mut db, flags.section, &opts).await
     }
 }
 
@@ -160,37 +152,21 @@ fn credits_key(db: &Db, item: i64) -> Result<String, rusqlite::Error> {
     let parts = db.parts_by_item(item)?;
     Ok(parts
         .iter()
-        .find(|part| part.duration > 0 && part.size > 0)
-        .map(|part| format!("d={}\ns={}\n", part.duration, part.size))
+        .map(Part::media_key)
+        .find(|key| !key.is_empty())
         .unwrap_or_default())
 }
 
-/// The assistant's own ledger, when its cache can be opened. A missing
-/// cache must not stop detection: the marker is still written to Plex.
-fn marker_cache() -> Option<runtime::Cache> {
-    let path = std::env::var("ASSISTANT_CACHE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/config/assistant/cache.db"));
-    runtime::Cache::open(path).ok()
-}
-
 /// Credits detection for one file: find the item, resolve a strm target
-/// through the daemon, run the black-window heuristic and write the
-/// marker. Local files and unknown paths keep the official path.
+/// through the daemon, run the detectors `ASSISTANT_CREDITS` picks and
+/// write the marker. Local files and unknown paths keep the official path.
 async fn run_credits(file: &OsStr) -> CliResult {
     let file_str = file.to_string_lossy().into_owned();
     let opts = Options {
-        ffprobe: std::env::var("ASSISTANT_FFPROBE").unwrap_or_else(|_| "ffprobe".into()),
+        ffprobe: env_or("ASSISTANT_FFPROBE", "ffprobe"),
         user_agent: DEFAULT_UA.into(),
-        runtime_sock: std::env::var("ASSISTANT_SOCK")
-            .ok()
-            .map(PathBuf::from)
-            .filter(|s| !s.as_os_str().is_empty())
-            .or_else(|| Some(PathBuf::from(DEFAULT_SOCK))),
-        cache: std::env::var("ASSISTANT_CACHE")
-            .ok()
-            .map(PathBuf::from)
-            .filter(|p| !p.as_os_str().is_empty()),
+        runtime_sock: Some(env_or("ASSISTANT_SOCK", DEFAULT_SOCK).into()),
+        cache: Some(runtime::cache_path()),
     };
 
     let mut db = Db::open(plexdb::DEFAULT_PATH)?;
@@ -206,8 +182,11 @@ async fn run_credits(file: &OsStr) -> CliResult {
     // hand-set marker, or a stopped one must not spend a detection run.
     // The key is the part's duration and size, the same pair the content
     // ledger matches on, so a re-added item of the same file still skips.
+    // A missing cache must not stop detection: the marker is still
+    // written to Plex.
     let digest = runtime::marker_digest(&credits_key(&db, item)?);
-    if let Some(cache) = marker_cache()
+    let cache = runtime::Cache::open(runtime::cache_path()).ok();
+    if let Some(cache) = &cache
         && cache.marker_decision(item, plexdb::MARKER_CREDITS, &digest)?
             == runtime::MarkerDecision::Skip
     {
@@ -219,40 +198,17 @@ async fn run_credits(file: &OsStr) -> CliResult {
         println!("credits: resolve failed for {file_str}");
         return Ok(0); // nothing to detect; PMS counts this a success
     };
-    let ffmpeg = std::env::var("ASSISTANT_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
-    let choice = scanner::credits_choice::Detector::parse(
-        std::env::var(scanner::credits_choice::ENV).ok().as_deref(),
-    );
-    let duration = input_duration(&opts.ffprobe, &link.url, &opts.user_agent).await;
-    let marker = match choice {
-        scanner::credits_choice::Detector::Model => {
-            detect_with_graph(&ffmpeg, &link.url, &opts.user_agent, duration).await
-        }
-        scanner::credits_choice::Detector::Heuristic => {
-            detect_heuristic(
-                &ffmpeg,
-                &opts.ffprobe,
-                &link.url,
-                &opts.user_agent,
-                duration,
-            )
-            .await
-        }
-        scanner::credits_choice::Detector::Auto => {
-            detect_auto(
-                &ffmpeg,
-                &opts.ffprobe,
-                &link.url,
-                &opts.user_agent,
-                duration,
-            )
-            .await
-        }
-    };
-    match marker {
+    let ffmpeg = env_or("ASSISTANT_FFMPEG", "ffmpeg");
+    // one probe for every detector: each seeks into the tail from it
+    let duration = scanner::probe(&opts.ffprobe, &link.url, &opts.user_agent)
+        .await
+        .map(|p| scanner::duration_ms(&p.format.duration) as f64 / 1000.0)
+        .unwrap_or(0.0);
+    let detector = credits::Detector::from_env();
+    match credits::detect(detector, &ffmpeg, &link.url, &opts.user_agent, duration).await {
         Some((start, end)) => {
             db.write_marker(item, plexdb::MARKER_CREDITS, start, end)?;
-            if let Some(cache) = marker_cache() {
+            if let Some(cache) = &cache {
                 cache.record_marker(
                     item,
                     plexdb::MARKER_CREDITS,
@@ -269,78 +225,12 @@ async fn run_credits(file: &OsStr) -> CliResult {
     Ok(0)
 }
 
-/// Black window, then the graph, then edges.
-async fn detect_auto(
-    ffmpeg: &str,
-    ffprobe: &str,
-    input: &str,
-    ua: &str,
-    duration: f64,
-) -> Option<(i64, i64)> {
-    if let Some(window) = credits::detect_credits(ffmpeg, ffprobe, input, ua).await {
-        return Some(window);
-    }
-    if let Some(window) = detect_with_graph(ffmpeg, input, ua, duration).await {
-        return Some(window);
-    }
-    scanner::credits_model::detect_credits_visual(ffmpeg, input, ua, duration).await
-}
-
-/// Black window, then edges. The graph is not loaded.
-async fn detect_heuristic(
-    ffmpeg: &str,
-    ffprobe: &str,
-    input: &str,
-    ua: &str,
-    duration: f64,
-) -> Option<(i64, i64)> {
-    if let Some(window) = credits::detect_credits(ffmpeg, ffprobe, input, ua).await {
-        return Some(window);
-    }
-    scanner::credits_model::detect_credits_visual(ffmpeg, input, ua, duration).await
-}
-
-/// The graph's credits window, when the stored model loads and finds one.
-///
-/// A missing model, a graph that will not run, or a failed extraction
-/// all return `None`. In `auto` the caller then tries the edge detector;
-/// in `model` a miss writes nothing.
-async fn detect_with_graph(
-    ffmpeg: &str,
-    input: &str,
-    ua: &str,
-    duration_secs: f64,
-) -> Option<(i64, i64)> {
-    let path = scanner::credits_assets::path(std::path::Path::new(
-        scanner::credits_assets::DEFAULT_CONFIG,
-    ));
-    let stored = scanner::credits_assets::load(&path).await.ok()??;
-    let plan = scanner::credits_net::load(&stored.path).ok()?;
-    scanner::credits_detect::detect(&plan, ffmpeg, input, ua, duration_secs)
-        .await
-        .ok()?
-}
-
-/// Duration in seconds via ffprobe.
-async fn input_duration(ffprobe: &str, input: &str, ua: &str) -> f64 {
-    use scanner::duration_ms;
-    scanner::probe(ffprobe, input, ua)
-        .await
-        .map(|p| duration_ms(&p.format.duration) as f64 / 1000.0)
-        .unwrap_or(0.0)
-}
-
-async fn analyze_one(
-    db: &mut Db,
-    item: i64,
-    opts: &Options,
-    refreshed: &mut std::collections::HashSet<String>,
-) -> CliResult {
+async fn analyze_one(db: &mut Db, item: i64, opts: &Options) -> CliResult {
     let parts = db.parts_by_item(item)?;
     if !parts.iter().any(|p| is_strm(&p.file)) {
         return Err(exec_original().into()); // local media: keep the official path
     }
-    let n = scanner::analyze_item(db, item, opts, refreshed).await?;
+    let n = scanner::analyze_item(db, item, opts, &Refreshed::default()).await?;
     println!("item {item}: analyzed {n} strm part(s)");
     // A single episode is enough to know its season. Intros need two
     // episodes to compare, so the season is only visited when it has them;
@@ -356,8 +246,8 @@ async fn analyze_one(
 /// Failures are logged. A season with fewer than two strm episodes, or
 /// one whose episodes are already booked, writes nothing.
 async fn detect_intros(db: &mut Db, seasons: &[i64], opts: &Options) {
-    let ffmpeg = std::env::var("ASSISTANT_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
-    let fpcalc = std::env::var("ASSISTANT_FPCALC").unwrap_or_else(|_| "fpcalc".into());
+    let ffmpeg = env_or("ASSISTANT_FFMPEG", "ffmpeg");
+    let fpcalc = env_or("ASSISTANT_FPCALC", "fpcalc");
     for &season in seasons {
         match scanner::intro::detect_season_intros(
             db,
@@ -382,12 +272,7 @@ async fn detect_intros(db: &mut Db, seasons: &[i64], opts: &Options) {
 /// the single library connection and run one item at a time.
 const PROBE_CONCURRENCY: usize = 3;
 
-async fn analyze_section(
-    db: &mut Db,
-    section: i64,
-    opts: &Options,
-    refreshed: &mut std::collections::HashSet<String>,
-) -> CliResult {
+async fn analyze_section(db: &mut Db, section: i64, opts: &Options) -> CliResult {
     let ids = db.items_by_section(section)?;
     let mut pending = Vec::new();
     for &id in &ids {
@@ -397,7 +282,8 @@ async fn analyze_section(
         }
     }
 
-    let shared = std::sync::Arc::new(std::sync::Mutex::new(std::mem::take(refreshed)));
+    // one refresh budget per target for the whole run
+    let refreshed = Refreshed::default();
     let mut in_flight = tokio::task::JoinSet::new();
     let mut rest = pending.into_iter();
     loop {
@@ -405,9 +291,9 @@ async fn analyze_section(
             && let Some((id, parts)) = rest.next()
         {
             let opts = opts.clone();
-            let refreshed = shared.clone();
+            let refreshed = refreshed.clone();
             in_flight.spawn(async move {
-                let probed = scanner::probe_item(parts, id, &opts, refreshed).await;
+                let probed = scanner::probe_item(parts, id, &opts, &refreshed).await;
                 (id, probed)
             });
         }
@@ -423,12 +309,6 @@ async fn analyze_section(
         };
         if let Err(e) = scanner::write_item(db, id, probed, opts) {
             println!("item {id}: {e}");
-        }
-    }
-    if let Ok(guard) = std::sync::Arc::try_unwrap(shared).map(|m| m.into_inner()) {
-        match guard {
-            Ok(seen) => *refreshed = seen,
-            Err(poisoned) => *refreshed = poisoned.into_inner(),
         }
     }
     if let Err(e) = db.checkpoint() {

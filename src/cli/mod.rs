@@ -4,7 +4,9 @@
 //! symlinks (Scanner / Transcoder), the subcommand is derived from argv[0];
 //! manual invocations use subcommands directly.
 
+mod credits_probe;
 mod install;
+mod intro;
 mod marker;
 mod runtime;
 mod scanner;
@@ -38,47 +40,12 @@ enum Command {
     Transcoder(transcoder::Args),
     Runtime(runtime::Args),
     Install(install::Args),
-    Intro(IntroArgs),
-    /// Prints the inputs and outputs of the credits-detection model.
-    CreditsProbe(CreditsProbeArgs),
+    Intro(intro::Args),
+    CreditsProbe(credits_probe::Args),
     /// Shows and edits the markers detection booked.
     Marker(marker::Args),
     /// Shows and restores remembered audio and subtitle choices.
     Tracks(tracks::Args),
-}
-
-/// Prints the credits model's inputs and outputs. Detection does not
-/// use the result yet; this only checks that the graph can be run.
-#[derive(Debug, clap::Args)]
-struct CreditsProbeArgs {
-    /// model file; defaults to the copy under the Plex config root
-    #[arg(long)]
-    model: Option<std::path::PathBuf>,
-    /// Plex config root, used when --model is omitted
-    #[arg(long, default_value = crate::scanner::credits_assets::DEFAULT_CONFIG)]
-    config: std::path::PathBuf,
-}
-
-/// Detects intro markers by cross-comparing audio fingerprints of
-/// episodes within each season.
-#[derive(Debug, clap::Args)]
-struct IntroArgs {
-    /// library section id
-    #[arg(long)]
-    section: i64,
-    /// library database path
-    #[arg(long, default_value = crate::plexdb::DEFAULT_PATH)]
-    library_db: std::path::PathBuf,
-    #[arg(long, default_value = "ffmpeg")]
-    ffmpeg: String,
-    #[arg(long, default_value = "fpcalc")]
-    fpcalc: String,
-    #[arg(long, default_value = "ffprobe")]
-    ffprobe: String,
-    #[arg(long, default_value = crate::linkres::DEFAULT_UA)]
-    ua: String,
-    #[arg(long)]
-    runtime_sock: Option<std::path::PathBuf>,
 }
 
 /// Maps argv[0] to a subcommand by basename. Exact symlink names are
@@ -124,8 +91,8 @@ pub async fn run() -> i32 {
         Command::Transcoder(args) => transcoder::run(args, Path::new(&argv0)).await,
         Command::Runtime(args) => runtime::run(args).await,
         Command::Install(args) => install::run(args),
-        Command::Intro(args) => run_intro(args).await,
-        Command::CreditsProbe(args) => run_credits_probe(args),
+        Command::Intro(args) => intro::run(args).await,
+        Command::CreditsProbe(args) => credits_probe::run(args),
         Command::Marker(args) => marker::run(args),
         Command::Tracks(args) => tracks::run(args),
     };
@@ -135,32 +102,14 @@ pub async fn run() -> i32 {
     })
 }
 
-/// Loads the credits model and prints its signature.
-fn run_credits_probe(args: CreditsProbeArgs) -> CliResult {
-    let path = args
-        .model
-        .unwrap_or_else(|| crate::scanner::credits_assets::path(&args.config));
-    let plan = crate::scanner::credits_net::load(&path)?;
-    println!("{}", plan.signature());
-    Ok(0)
-}
-
-/// Runs intro detection for a library section.
-async fn run_intro(args: IntroArgs) -> CliResult {
-    let mut db = crate::plexdb::Db::open(&args.library_db)?;
-    let sock = args.runtime_sock;
-    let n = crate::scanner::intro::detect_section_intros(
-        &mut db,
-        args.section,
-        &args.ffmpeg,
-        &args.fpcalc,
-        &args.ffprobe,
-        &args.ua,
-        sock.as_ref(),
-    )
-    .await?;
-    println!("intro detection: {n} marker(s) written");
-    Ok(0)
+/// `name` from the environment when set and not empty, else `default`.
+/// Plex starts the scanner and transcoder with its own argv, so their
+/// tool paths and sockets can only be overridden this way.
+fn env_or(name: &str, default: &str) -> String {
+    std::env::var(name)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| default.to_owned())
 }
 
 #[cfg(test)]
@@ -203,6 +152,8 @@ mod tests {
             "install",
             "intro",
             "credits-probe",
+            "marker",
+            "tracks",
         ] {
             assert!(has_command(&[name.into()]), "{name}");
         }

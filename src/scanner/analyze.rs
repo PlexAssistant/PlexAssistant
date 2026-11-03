@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 use crate::linkres::{self, Link};
-use crate::plexdb::{Db, WriteError, WriteSpec};
-use crate::runtime::{Cache, Client, Identity, PartFailure};
+use crate::plexdb::{Db, Part, TrackChoice, WriteError, WriteSpec};
+use crate::runtime::{Cache, ChoiceUpdate, Client, Identity, PartFailure, Resolved};
 
 use super::probe::{ProbeError, ProbeResult, probe};
 use super::spec::build_spec;
@@ -41,6 +41,23 @@ pub struct Options {
     pub cache: Option<PathBuf>,
 }
 
+impl Options {
+    /// The assistant cache, when it can be opened. Callers open it once
+    /// per item: every open re-runs the schema statements.
+    fn open_cache(&self) -> Option<Cache> {
+        let path = self
+            .cache
+            .clone()
+            .unwrap_or_else(crate::runtime::cache_path);
+        Cache::open(path).ok()
+    }
+}
+
+/// The targets that got a fresh link this run. Every target gets at most
+/// one refresh per round, however many parts point at it and however many
+/// items are probed at once.
+pub type Refreshed = Arc<Mutex<HashSet<String>>>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AnalyzeError {
     #[error(transparent)]
@@ -60,36 +77,36 @@ pub fn is_strm(file: &str) -> bool {
 
 /// One part whose probe succeeded and is ready to be written.
 pub struct Probed {
-    part: crate::plexdb::Part,
+    part: Part,
     spec: WriteSpec,
 }
 
 /// Resolves and probes every strm part of one item, without touching the
-/// database. The library read happens first, so the rest can run alongside
+/// library. The library read happens first, so the rest can run alongside
 /// other items; the caller writes the results back on its own connection.
-/// Failures are logged and skipped. `refreshed` dedups link refreshes across
-/// the whole run: every target gets at most one fresh link per round, which
-/// still holds when several items are probed at once.
+/// Failures are logged and skipped.
 pub async fn probe_item(
-    parts: Vec<crate::plexdb::Part>,
+    parts: Vec<Part>,
     item_id: i64,
     opts: &Options,
-    refreshed: Arc<Mutex<HashSet<String>>>,
+    refreshed: &Refreshed,
 ) -> Vec<Probed> {
+    let cache = opts.open_cache();
+    let cache = cache.as_ref();
     let mut out = Vec::new();
     for part in parts.into_iter().filter(|p| is_strm(&p.file)) {
         let target = match linkres::parse_strm(&part.file) {
             Ok(target) => target,
             Err(e) => {
                 println!("item {item_id} part {}: {e}", part.id);
-                note_part(part.id, PartFailure::Permanent, opts);
+                note_part(cache, part.id, PartFailure::Permanent);
                 continue;
             }
         };
         if !target.is_remote {
             continue; // local path inside a strm: not ours
         }
-        if part_is_skipped(part.id, opts) {
+        if cache.is_some_and(|c| c.part_skipped(part.id).unwrap_or(false)) {
             println!("item {item_id} part {}: skipped", part.id);
             continue;
         }
@@ -97,24 +114,26 @@ pub async fn probe_item(
         // any probe: duration and size are what the content ledger stores.
         // A hit means this file was probed before, under some other path or
         // item, and the rows can be copied instead of probed again.
-        if let Some(spec) = reused_spec(&part, opts) {
+        if let Some(spec) = cache.and_then(|c| reused_spec(c, &part)) {
             println!("item {item_id} part {}: same content, reusing", part.id);
             out.push(Probed { part, spec });
             continue;
         }
         let Some(link) = resolve_link(&target.value, opts).await else {
             println!("item {item_id} part {}: resolve failed", part.id);
-            note_part(part.id, PartFailure::Temporary, opts);
+            note_part(cache, part.id, PartFailure::Temporary);
             continue;
         };
         let Some((probed, link)) =
-            probe_and_heal(&link, &target.value, opts, &refreshed, item_id, part.id).await
+            probe_and_heal(&link, &target.value, opts, refreshed, item_id, part.id).await
         else {
-            note_part(part.id, PartFailure::Temporary, opts);
+            note_part(cache, part.id, PartFailure::Temporary);
             continue;
         };
-        clear_part(part.id, opts);
-        let spec = remember_probe(&part, &probed, &link, opts);
+        if let Some(cache) = cache {
+            let _ = cache.clear_part_failure(part.id);
+        }
+        let spec = remember_probe(cache, &part, &probed, &link);
         out.push(Probed { part, spec });
     }
     out
@@ -129,62 +148,40 @@ pub async fn probe_item(
 /// lookup exists. The first sight of a file always probes: nothing stable
 /// is known before ffprobe runs.
 fn remember_probe(
-    part: &crate::plexdb::Part,
+    cache: Option<&Cache>,
+    part: &Part,
     probed: &ProbeResult,
     link: &Link,
-    opts: &Options,
 ) -> WriteSpec {
     let spec = build_spec(part, probed, link);
-    if let Some(cache) = open_cache(opts)
+    if let Some(cache) = cache
         && let Some(identity) = Identity::from_probe(probed)
     {
-        let _ = cache.remember_content(&identity.key(), &spec, std::time::SystemTime::now());
+        let _ = cache.remember_content(&identity.key(), &spec, SystemTime::now());
     }
     spec
 }
 
 /// The analysis already stored for a part whose library row already has
-/// a duration and a size. Parts that have never been analysed return
-/// nothing, and so does a cache that cannot be opened.
-fn reused_spec(part: &crate::plexdb::Part, opts: &Options) -> Option<WriteSpec> {
+/// a duration and a size, copied onto this part. Parts that have never
+/// been analysed return nothing.
+fn reused_spec(cache: &Cache, part: &Part) -> Option<WriteSpec> {
     if part.duration <= 0 || part.size <= 0 {
         return None;
     }
-    let cache = open_cache(opts)?;
-    let stored = cache.content_for_media(part.duration, part.size).ok()??;
-    Some(retarget(stored.spec, part))
-}
-
-/// Copies a remembered analysis onto another part of the same file.
-fn retarget(mut spec: WriteSpec, part: &crate::plexdb::Part) -> WriteSpec {
+    let mut spec = cache
+        .content_for_media(part.duration, part.size)
+        .ok()??
+        .spec;
     spec.media_item_id = part.media_item_id;
     spec.part_id = part.id;
-    spec
+    Some(spec)
 }
 
-fn note_part(part_id: i64, kind: PartFailure, opts: &Options) {
-    if let Some(cache) = open_cache(opts) {
-        let _ = cache.record_part_failure(part_id, kind, std::time::SystemTime::now());
+fn note_part(cache: Option<&Cache>, part_id: i64, kind: PartFailure) {
+    if let Some(cache) = cache {
+        let _ = cache.record_part_failure(part_id, kind, SystemTime::now());
     }
-}
-
-fn clear_part(part_id: i64, opts: &Options) {
-    if let Some(cache) = open_cache(opts) {
-        let _ = cache.clear_part_failure(part_id);
-    }
-}
-
-fn part_is_skipped(part_id: i64, opts: &Options) -> bool {
-    open_cache(opts).and_then(|cache| cache.part_skipped(part_id).ok()) == Some(true)
-}
-
-fn open_cache(opts: &Options) -> Option<Cache> {
-    let path = opts
-        .cache
-        .clone()
-        .or_else(|| std::env::var("ASSISTANT_CACHE").ok().map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("/config/assistant/cache.db"));
-    Cache::open(path).ok()
 }
 
 /// Writes the probed parts of one item. A failed write stops the run.
@@ -200,7 +197,7 @@ pub fn write_item(
     opts: &Options,
 ) -> Result<usize, AnalyzeError> {
     let show = db.show_of_item(item_id).ok().flatten();
-    let cache = open_cache(opts);
+    let cache = opts.open_cache();
     for row in &probed {
         let kept = keep_selections(db, row.part.id);
         db.update_media(&row.spec)
@@ -240,21 +237,15 @@ fn keep_selections(db: &Db, part_id: i64) -> Vec<Kept> {
 
 struct Kept {
     account_id: i64,
-    audio: Option<crate::plexdb::TrackChoice>,
-    subtitle: Option<crate::plexdb::TrackChoice>,
+    audio: Option<TrackChoice>,
+    subtitle: Option<TrackChoice>,
     previous_audio: Option<i64>,
     previous_subtitle: Option<i64>,
 }
 
 /// Points each saved selection at the stream that replaced it, and remembers
 /// the choice for the show.
-fn retarget_kept(
-    db: &Db,
-    part_id: i64,
-    show: Option<i64>,
-    kept: &[Kept],
-    cache: Option<&crate::runtime::Cache>,
-) {
+fn retarget_kept(db: &Db, part_id: i64, show: Option<i64>, kept: &[Kept], cache: Option<&Cache>) {
     for row in kept {
         let audio = matched(db, part_id, row.audio.as_ref());
         let subtitle = matched(db, part_id, row.subtitle.as_ref());
@@ -263,13 +254,13 @@ fn retarget_kept(
             let _ = cache.remember_tracks(
                 row.account_id,
                 show,
-                &crate::runtime::ChoiceUpdate {
+                &ChoiceUpdate {
                     audio: row.audio.clone(),
                     subtitle: row.subtitle.clone(),
                     previous_audio: row.previous_audio,
                     previous_subtitle: row.previous_subtitle,
                 },
-                std::time::SystemTime::now(),
+                SystemTime::now(),
             );
         }
     }
@@ -279,14 +270,8 @@ fn retarget_kept(
 ///
 /// An account that already had a row on this part was retargeted from that
 /// row. This only fills a part the account has not picked on yet.
-fn apply_show_choice(
-    db: &Db,
-    cache: &crate::runtime::Cache,
-    show: i64,
-    part_id: i64,
-    kept: &[Kept],
-) {
-    let already: std::collections::HashSet<i64> = kept.iter().map(|row| row.account_id).collect();
+fn apply_show_choice(db: &Db, cache: &Cache, show: i64, part_id: i64, kept: &[Kept]) {
+    let already: HashSet<i64> = kept.iter().map(|row| row.account_id).collect();
     let Ok(accounts) = cache.accounts_for_show(show) else {
         return;
     };
@@ -303,28 +288,21 @@ fn apply_show_choice(
     }
 }
 
-fn matched(db: &Db, part_id: i64, choice: Option<&crate::plexdb::TrackChoice>) -> Option<i64> {
+fn matched(db: &Db, part_id: i64, choice: Option<&TrackChoice>) -> Option<i64> {
     db.match_track(part_id, choice?).ok().flatten()
 }
 
 /// Runs the pipeline for every strm part of one metadata item: resolve the
 /// direct link, probe it, write the results. Non-strm parts and failures
 /// are skipped without aborting the run; only a failed write stops it.
-/// `refreshed` dedups link refreshes across the whole section run: every
-/// target gets at most one fresh link per round, no matter how many parts
-/// point at it.
 pub async fn analyze_item(
     db: &mut Db,
     item_id: i64,
     opts: &Options,
-    refreshed: &mut HashSet<String>,
+    refreshed: &Refreshed,
 ) -> Result<usize, AnalyzeError> {
     let parts = db.parts_by_item(item_id)?;
-    let shared = Arc::new(Mutex::new(std::mem::take(refreshed)));
-    let probed = probe_item(parts, item_id, opts, shared.clone()).await;
-    if let Ok(guard) = shared.lock() {
-        *refreshed = guard.clone();
-    }
+    let probed = probe_item(parts, item_id, opts, refreshed).await;
     write_item(db, item_id, probed, opts)
 }
 
@@ -347,7 +325,7 @@ async fn probe_and_heal(
                 .lock()
                 .is_ok_and(|mut set| set.insert(target.to_owned()));
             if !claimed {
-                report_dead(target, opts).await;
+                report(target, opts, false).await;
                 println!("item {item} part {part}: dead target, backing off");
                 return None;
             }
@@ -365,7 +343,7 @@ async fn probe_and_heal(
                     Some((probed, fresh))
                 }
                 Err(e) => {
-                    report_dead(target, opts).await;
+                    report(target, opts, false).await;
                     // ffprobe errors can echo the signed URL; redact it
                     let e = super::redact_urls(&e.to_string());
                     println!("item {item} part {part}: still dead after refresh: {e}");
@@ -376,7 +354,7 @@ async fn probe_and_heal(
         Err(e) => {
             // not a dead link, so no refresh — but it still failed, and
             // leaving it unbooked re-probes it on every later scan
-            report_dead(target, opts).await;
+            report(target, opts, false).await;
             // ffprobe errors can echo the signed URL; redact it
             let e = super::redact_urls(&e.to_string());
             println!("item {item} part {part}: probe: {e}");
@@ -407,19 +385,11 @@ pub async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
         && let Ok(res) = client.resolve(target).await
     {
         if res.expires_at == 0 || res.expires_at > now_secs() {
-            return Some(Link {
-                url: res.direct,
-                expires_at: res.expires_at,
-                ..Default::default()
-            });
+            return Some(link_of(res));
         }
-        return refresh_link(target, opts).await.or_else(|| {
-            Some(Link {
-                url: res.direct,
-                expires_at: res.expires_at,
-                ..Default::default()
-            })
-        });
+        return refresh_link(target, opts)
+            .await
+            .or_else(|| Some(link_of(res)));
     }
     match linkres::resolve(target, &opts.user_agent).await {
         Ok(link) => Some(link),
@@ -430,9 +400,18 @@ pub async fn resolve_link(target: &str, opts: &Options) -> Option<Link> {
     }
 }
 
+/// The link a daemon answer carries.
+fn link_of(res: Resolved) -> Link {
+    Link {
+        url: res.direct,
+        expires_at: res.expires_at,
+        ..Default::default()
+    }
+}
+
 /// Wall-clock unix seconds; 0 on a clock before the epoch.
 fn now_secs() -> i64 {
-    std::time::SystemTime::now()
+    SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64)
 }
@@ -444,32 +423,19 @@ async fn refresh_link(target: &str, opts: &Options) -> Option<Link> {
         && let Some(client) = shared_client(sock)
         && let Ok(res) = client.refresh(target).await
     {
-        return Some(Link {
-            url: res.direct,
-            expires_at: res.expires_at,
-            ..Default::default()
-        });
+        return Some(link_of(res));
     }
     linkres::resolve(target, &opts.user_agent).await.ok()
 }
 
-/// Books a persistently dead target into the daemon's ledger.
-async fn report_dead(target: &str, opts: &Options) {
-    report(target, opts, false).await;
-}
-
-/// Books a target. `permanent` is skipped until a success clears it;
-/// anything else takes the growing backoff.
+/// Books a target with the daemon, when one is reachable. `permanent` is
+/// skipped until a success clears it; anything else takes the growing
+/// backoff.
 async fn report(target: &str, opts: &Options, permanent: bool) {
     if let Some(sock) = &opts.runtime_sock
         && let Some(client) = shared_client(sock)
     {
-        let booked = if permanent {
-            client.dead_permanent(target).await
-        } else {
-            client.dead(target).await
-        };
-        let _ = booked;
+        let _ = client.dead(target, permanent).await;
     }
 }
 
@@ -589,7 +555,7 @@ mod tests {
         };
 
         assert_eq!(
-            analyze_item(&mut db, 42, &opts, &mut Default::default())
+            analyze_item(&mut db, 42, &opts, &Refreshed::default())
                 .await
                 .unwrap(),
             1
@@ -613,7 +579,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            analyze_item(&mut db, 42, &opts, &mut Default::default())
+            analyze_item(&mut db, 42, &opts, &Refreshed::default())
                 .await
                 .unwrap(),
             0
@@ -643,7 +609,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            analyze_item(&mut db, 42, &opts, &mut Default::default())
+            analyze_item(&mut db, 42, &opts, &Refreshed::default())
                 .await
                 .unwrap(),
             0
@@ -702,7 +668,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            analyze_item(&mut db, 42, &opts, &mut Default::default())
+            analyze_item(&mut db, 42, &opts, &Refreshed::default())
                 .await
                 .unwrap(),
             1
@@ -748,7 +714,7 @@ mod tests {
         };
 
         assert_eq!(
-            analyze_item(&mut db, 42, &opts, &mut Default::default())
+            analyze_item(&mut db, 42, &opts, &Refreshed::default())
                 .await
                 .unwrap(),
             1
@@ -826,7 +792,7 @@ mod tests {
         };
 
         assert_eq!(
-            analyze_item(&mut db, 42, &opts, &mut Default::default())
+            analyze_item(&mut db, 42, &opts, &Refreshed::default())
                 .await
                 .unwrap(),
             1
@@ -851,7 +817,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            analyze_item(&mut db, 42, &opts, &mut Default::default())
+            analyze_item(&mut db, 42, &opts, &Refreshed::default())
                 .await
                 .unwrap(),
             0
@@ -925,14 +891,12 @@ mod tests {
             cache: None,
             ..Default::default()
         };
-        let mut refreshed = HashSet::new();
+        let refreshed = Refreshed::default();
         assert_eq!(
-            analyze_item(&mut db, 42, &opts, &mut refreshed)
-                .await
-                .unwrap(),
+            analyze_item(&mut db, 42, &opts, &refreshed).await.unwrap(),
             2
         );
-        assert_eq!(refreshed.len(), 1, "one refresh per target");
+        assert_eq!(refreshed.lock().unwrap().len(), 1, "one refresh per target");
         assert_eq!(written_items(dir.path()).len(), 2);
     }
 
@@ -952,7 +916,7 @@ mod tests {
             cache: None,
             ..Default::default()
         };
-        let err = analyze_item(&mut db, 42, &opts, &mut Default::default())
+        let err = analyze_item(&mut db, 42, &opts, &Refreshed::default())
             .await
             .unwrap_err();
         assert_eq!(

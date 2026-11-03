@@ -13,7 +13,7 @@ pub struct Args {
     #[arg(long, default_value = DEFAULT_SOCK)]
     sock: PathBuf,
     /// cache database path
-    #[arg(long, default_value = "/config/assistant/cache.db")]
+    #[arg(long, default_value = crate::runtime::DEFAULT_CACHE)]
     cache: PathBuf,
     /// user agent for cloud drives
     #[arg(long, default_value = DEFAULT_UA)]
@@ -105,7 +105,7 @@ async fn fill_item(
         runtime_sock: Some(sock.to_owned()).filter(|p| !p.as_os_str().is_empty()),
         cache: Some(cache.to_owned()),
     };
-    let n = crate::scanner::analyze_item(&mut db, item, &opts, &mut Default::default()).await?;
+    let n = crate::scanner::analyze_item(&mut db, item, &opts, &Default::default()).await?;
     if n > 0 {
         println!("detail {item}: analyzed {n} strm part(s)");
     }

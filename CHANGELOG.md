@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Intro detection after a section scan visited every season in the
+  library, not only the seasons of that section.
+- A scan's resolve and refresh were recorded as playback reads, so the
+  daily cloud usage counted a scan's cache hits and file sizes.
+
+### Changed
+
+- A credits run probes the file once. The black-window detector used to
+  run its own ffprobe before the other detectors ran theirs.
+- A scan opens the assistant cache once per item instead of once per
+  lookup.
+- `assistant intro` no longer takes `--ffprobe`, which it never used.
+
 ## [0.4.5] — 2026-11-03
 
 ### Fixed

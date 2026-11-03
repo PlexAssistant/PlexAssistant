@@ -1,6 +1,9 @@
-use std::time::Duration;
+//! Black-window credits detection: ffmpeg's blackdetect over the tail.
 
 use tokio::process::Command;
+
+use super::TAIL_SECS;
+use crate::scanner::redact_urls;
 
 /// A black interval ffmpeg's blackdetect reported, in seconds.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -12,21 +15,12 @@ pub struct BlackInterval {
 /// Minimum marker window Plex honors.
 const MIN_MARKER_SECS: f64 = 15.0;
 
-/// Only the tail is scanned: credits live at the end, and walking a
-/// whole hour of 4K over a cloud link costs real bandwidth; the window
-/// size follows what real credits look like.
-pub const TAIL_WINDOW_SECS: f64 = 600.0;
-
 /// Heuristic credits detection: run ffmpeg's blackdetect over the last
 /// ten minutes and pick the last black window of at least 15 seconds as
 /// the credits. Misses credits that are not black-background — the
-/// visual model is the follow-up for those.
-pub async fn detect_credits(
-    ffmpeg: &str,
-    ffprobe: &str,
-    input: &str,
-    ua: &str,
-) -> Option<(i64, i64)> {
+/// visual detectors are the follow-up for those. `duration_secs` places
+/// the seek; 0 scans from the start.
+pub async fn detect(ffmpeg: &str, input: &str, ua: &str, duration_secs: f64) -> Option<(i64, i64)> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-nostats".into(),
@@ -39,13 +33,11 @@ pub async fn detect_credits(
         args.push("-headers".into());
         args.push(format!("User-Agent: {ua}\r\n"));
     }
-    // seek into the tail when the duration is known
-    if let Some(duration) = input_duration(ffprobe, input, ua).await {
-        let seek = (duration - TAIL_WINDOW_SECS).max(0.0);
-        if seek > 0.0 {
-            args.push("-ss".into());
-            args.push(format!("{seek:.3}"));
-        }
+    // seek into the tail; blackdetect timestamps are relative to it
+    let seek = (duration_secs - TAIL_SECS).max(0.0);
+    if seek > 0.0 {
+        args.push("-ss".into());
+        args.push(format!("{seek:.3}"));
     }
     args.extend([
         "-i".to_owned(),
@@ -67,17 +59,15 @@ pub async fn detect_credits(
         .ok()?;
     // blackdetect reports on stderr
     let log = String::from_utf8_lossy(&out.stderr);
-    let mut best: Option<BlackInterval> = None;
-    for line in log.lines() {
-        if let Some(interval) = parse_blackdetect(line)
-            && interval.end - interval.start >= MIN_MARKER_SECS
-        {
-            best = Some(interval); // lines are chronological; last wins
-        }
-    }
-    let Some(interval) = best else {
+    // lines are chronological; the last long enough window wins
+    let Some(interval) = log
+        .lines()
+        .rev()
+        .filter_map(parse_blackdetect)
+        .find(|i| i.end - i.start >= MIN_MARKER_SECS)
+    else {
         // the info-level log echoes the signed input URL; redact it
-        let tail: Vec<String> = log.lines().rev().take(3).map(super::redact_urls).collect();
+        let tail: Vec<String> = log.lines().rev().take(3).map(redact_urls).collect();
         eprintln!(
             "credits: no window; ffmpeg exit={:?}, stderr tail: {:?}",
             out.status.code(),
@@ -85,23 +75,10 @@ pub async fn detect_credits(
         );
         return None;
     };
-    // the -ss offset shifts blackdetect timestamps; rebase to the file
-    let base = args
-        .iter()
-        .position(|a| a == "-ss")
-        .map(|i| args[i + 1].parse::<f64>().unwrap_or(0.0))
-        .unwrap_or(0.0);
     Some((
-        ((interval.start + base) * 1000.0) as i64,
-        ((interval.end + base) * 1000.0) as i64,
+        ((interval.start + seek) * 1000.0) as i64,
+        ((interval.end + seek) * 1000.0) as i64,
     ))
-}
-
-/// The input's duration in seconds via ffprobe, when it can be had.
-async fn input_duration(ffprobe: &str, input: &str, ua: &str) -> Option<f64> {
-    let probed = super::probe(ffprobe, input, ua).await.ok()?;
-    let ms = super::duration_ms(&probed.format.duration);
-    (ms > 0).then(|| ms as f64 / 1000.0)
 }
 
 /// Parses a blackdetect log line:
@@ -123,9 +100,6 @@ pub fn parse_blackdetect(line: &str) -> Option<BlackInterval> {
         end: field("black_end:")?,
     })
 }
-
-/// The probe timeout this detection shares; ffmpeg walks the whole file.
-pub const DETECT_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[cfg(test)]
 mod tests {
@@ -191,7 +165,7 @@ mod tests {
             .status()
             .unwrap();
         assert!(st.success());
-        let marker = detect_credits("ffmpeg", "ffprobe", file.to_str().unwrap(), "UA/1").await;
+        let marker = detect("ffmpeg", file.to_str().unwrap(), "UA/1", 40.0).await;
         let (start, end) = marker.expect("black credits window found");
         assert!((9_000..=12_000).contains(&start), "start {start}");
         assert!(end >= 38_000, "end {end}");
