@@ -3,10 +3,7 @@
 //! from the tail window and finds sustained runs of high edge density
 //! that stand out from the content's baseline.
 
-use tokio::process::Command;
-
-/// Seconds per sampled frame (ffmpeg fps filter).
-const FRAME_STEP: f64 = 2.0;
+use super::frame_source::{self, Frame, FrameSpec};
 
 /// Frames from the tail window to sample.
 const TAIL_SECS: f64 = 600.0;
@@ -34,59 +31,19 @@ pub async fn detect_credits_visual(
     duration_secs: f64,
 ) -> Option<(i64, i64)> {
     let tail_start = (duration_secs - TAIL_SECS).max(0.0);
-    detect_with_padding(ffmpeg, input, ua, tail_start).await
-}
-
-/// Fixed-size version: pad to 320x320 so each frame is exactly
-/// 320 * 320 = 102400 bytes of grayscale.
-async fn detect_with_padding(
-    ffmpeg: &str,
-    input: &str,
-    ua: &str,
-    tail_start: f64,
-) -> Option<(i64, i64)> {
-    const W: usize = 320;
-    const H: usize = 320;
-    const FRAME_BYTES: usize = W * H;
-
-    let mut args: Vec<String> = vec![
-        "-y".into(),
-        "-hide_banner".into(),
-        "-loglevel".into(),
-        "error".into(),
-    ];
-    if input.starts_with("http://") || input.starts_with("https://") {
-        args.push("-headers".into());
-        args.push(format!("User-Agent: {ua}\r\n"));
-    }
-    if tail_start > 0.0 {
-        args.push("-ss".into());
-        args.push(format!("{tail_start:.3}"));
-    }
-    args.extend([
-        "-i".into(),
-        input.to_owned(),
-        "-an".into(),
-        "-vf".into(),
-        "fps=0.5,scale=320:320:force_original_aspect_ratio=decrease,pad=320:320:(ow-iw)/2:(oh-ih)/2,format=gray,edgedetect=low=0.08:high=0.2".into(),
-        "-f".into(),
-        "rawvideo".into(),
-        "-".into(),
-    ]);
-
-    let out = Command::new(ffmpeg)
-        .args(&args)
-        .kill_on_drop(true)
-        .output()
+    let frames = frame_source::extract_tail(ffmpeg, input, ua, tail_start, FrameSpec::EDGES)
         .await
         .ok()?;
+    detect_in_frames(&frames, FrameSpec::EDGES.step)
+}
 
-    let frames: Vec<&[u8]> = out
-        .stdout
-        .chunks(FRAME_BYTES)
-        .filter(|c| c.len() == FRAME_BYTES)
-        .collect();
-    if frames.len() < MIN_TEXT_FRAMES {
+/// Finds the longest sustained text run in already-extracted edge frames.
+/// Split from the extraction so the window search can be tested without
+/// ffmpeg. `step` is the seconds between frames; a run's end is one step
+/// past its last frame, which is where the next sample would have been.
+fn detect_in_frames(frames: &[Frame], step: f64) -> Option<(i64, i64)> {
+    let frame_bytes = frames.first().map(|f| f.bytes.len()).unwrap_or(0);
+    if frames.len() < MIN_TEXT_FRAMES || frame_bytes == 0 {
         eprintln!("credits visual: only {} frames", frames.len());
         return None;
     }
@@ -95,8 +52,8 @@ async fn detect_with_padding(
     let densities: Vec<f64> = frames
         .iter()
         .map(|f| {
-            let edges = f.iter().filter(|&&p| p > 60).count();
-            edges as f64 / FRAME_BYTES as f64
+            let edges = f.bytes.iter().filter(|&&p| p > 60).count();
+            edges as f64 / frame_bytes as f64
         })
         .collect();
 
@@ -136,9 +93,10 @@ async fn detect_with_padding(
             }
         }
     }
-    // trailing run
+    // trailing run; the closing branch above reports an exclusive end, so
+    // this one does too
     if run_len >= MIN_TEXT_FRAMES {
-        let end = has_text.len() - gap;
+        let end = has_text.len();
         let better = best.is_none_or(|(bs, be)| run_len > be - bs);
         if better {
             best = Some((run_start, end));
@@ -146,9 +104,72 @@ async fn detect_with_padding(
     }
 
     let (start_f, end_f) = best?;
-    let start = (tail_start + start_f as f64 * FRAME_STEP) * 1000.0;
-    let end = (tail_start + end_f as f64 * FRAME_STEP) * 1000.0;
+    let start = frames[start_f].pts * 1000.0;
+    // end_f is exclusive: the run covers `end_f - start_f` frames
+    let end = (frames[start_f].pts + (end_f - start_f) as f64 * step) * 1000.0;
     let n = frames.len();
     println!("credits visual: {n} frames, median density {median:.4}, run {start_f}-{end_f}");
     Some((start as i64, end as i64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PIXELS: usize = 320 * 320;
+
+    /// A flat edge map: `bright` pixels set, the rest dark. Density is
+    /// `bright / PIXELS`, which is what the detector thresholds on.
+    fn frame(pts: f64, bright: usize) -> Frame {
+        let mut bytes = vec![0u8; PIXELS];
+        for pixel in bytes.iter_mut().take(bright) {
+            *pixel = 255;
+        }
+        Frame { pts, bytes }
+    }
+
+    #[test]
+    fn finds_the_sustained_dense_run() {
+        // 20 quiet frames, then 10 dense ones: the run is the only thing
+        // above the median, and it clears the 8-frame minimum
+        let mut frames: Vec<Frame> = (0..20).map(|i| frame(i as f64 * 2.0, 1_000)).collect();
+        frames.extend((20..30).map(|i| frame(i as f64 * 2.0, 20_000)));
+
+        let (start, end) = detect_in_frames(&frames, 2.0).expect("text run");
+        assert_eq!(start, 40_000);
+        assert_eq!(end, 60_000);
+    }
+
+    #[test]
+    fn tolerates_a_short_dip_inside_the_run() {
+        let mut frames: Vec<Frame> = (0..20).map(|i| frame(i as f64 * 2.0, 1_000)).collect();
+        // two quiet frames in the middle stay inside the gap allowance
+        for i in 20..32 {
+            let bright = if i == 24 || i == 25 { 1_000 } else { 20_000 };
+            frames.push(frame(i as f64 * 2.0, bright));
+        }
+
+        let (start, end) = detect_in_frames(&frames, 2.0).expect("text run");
+        assert_eq!(start, 40_000);
+        assert_eq!(end, 64_000);
+    }
+
+    #[test]
+    fn rejects_a_run_shorter_than_the_minimum() {
+        let mut frames: Vec<Frame> = (0..20).map(|i| frame(i as f64 * 2.0, 1_000)).collect();
+        frames.extend((20..25).map(|i| frame(i as f64 * 2.0, 20_000)));
+        assert_eq!(detect_in_frames(&frames, 2.0), None);
+    }
+
+    #[test]
+    fn rebases_onto_the_file_when_the_tail_was_seeked() {
+        let mut frames: Vec<Frame> = (0..20)
+            .map(|i| frame(1_000.0 + i as f64 * 2.0, 1_000))
+            .collect();
+        frames.extend((20..30).map(|i| frame(1_000.0 + i as f64 * 2.0, 20_000)));
+
+        let (start, end) = detect_in_frames(&frames, 2.0).expect("text run");
+        assert_eq!(start, 1_040_000);
+        assert_eq!(end, 1_060_000);
+    }
 }

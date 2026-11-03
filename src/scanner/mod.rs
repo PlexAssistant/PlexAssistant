@@ -5,6 +5,7 @@ mod analyze;
 pub mod credits;
 pub mod credits_model;
 mod extra;
+mod frame_source;
 pub mod intro;
 mod lang;
 mod lang_table;
