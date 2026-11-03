@@ -5,7 +5,6 @@ use std::{fs, io};
 
 use rusqlite::{Connection, OptionalExtension, Result, params};
 
-
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS links (
     target_url  TEXT PRIMARY KEY,
