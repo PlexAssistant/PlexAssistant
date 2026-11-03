@@ -66,6 +66,7 @@ impl Cache {
         conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.execute_batch(SCHEMA)?;
         super::ledger::ensure_schema(&conn)?;
+        conn.execute_batch(super::markers::MARKERS_SCHEMA)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

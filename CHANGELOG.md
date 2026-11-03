@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Intro and credits detection keeps a ledger of what it wrote. A scan
+  skips an item whose content has not changed, and a marker set by hand
+  is not replaced. `assistant marker` lists the rows and can set, retry,
+  or stop one.
+
 ## [0.3.1] — 2026-11-03
 
 ### Fixed

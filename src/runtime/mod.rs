@@ -7,8 +7,10 @@ mod cache;
 mod client;
 mod daemon;
 mod ledger;
+mod markers;
 mod quota;
 
 pub use cache::{Cache, Entry, OpenError, Stats};
 pub use client::{Client, ClientError};
 pub use daemon::{DEFAULT_SOCK, Daemon, Resolved, TargetRequest};
+pub use markers::{MarkerDecision, MarkerOrigin, MarkerRecord, marker_digest};
