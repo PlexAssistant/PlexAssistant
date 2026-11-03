@@ -8,6 +8,8 @@ use std::time::Duration;
 use rusqlite::{Connection, Result};
 
 mod markers;
+#[cfg(test)]
+pub(crate) mod test_schema;
 mod tracks;
 mod write;
 

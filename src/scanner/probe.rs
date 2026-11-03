@@ -126,7 +126,7 @@ pub struct Stream {
     /// container-level id in hex, e.g. "0x1" (MP4 track), "0x100" (TS PID)
     pub id: String,
     pub codec_name: String,
-    /// sample entry fourcc, e.g. "hvc1"; "[0][0][0][0]" when binary
+    /// sample entry fourcc, e.g. "hvc1"; `"[0][0][0][0]"` when binary
     pub codec_tag_string: String,
     /// e.g. "Main 10", "High"
     pub profile: String,

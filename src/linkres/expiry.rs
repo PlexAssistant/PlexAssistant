@@ -4,7 +4,7 @@ use url::Url;
 use url::form_urlencoded;
 
 /// Looks for a plausible unix-seconds timestamp in the URL query (signed
-/// links commonly carry exp/expires/t=<exp>.<sig>). It is informational
+/// links commonly carry `exp`/`expires`/`t=<exp>.<sig>`). It is informational
 /// only; 0 means unknown.
 pub fn sniff_expiry(raw_url: &str, now: SystemTime) -> i64 {
     let Ok(url) = Url::parse(raw_url) else {

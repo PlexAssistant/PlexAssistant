@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use reqwest::header::CONTENT_TYPE;
 
-use super::daemon::{Resolved, TargetRequest};
+use super::api::{Resolved, TargetRequest};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 
