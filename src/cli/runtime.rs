@@ -105,7 +105,7 @@ async fn fill_item(
         runtime_sock: Some(sock.to_owned()).filter(|p| !p.as_os_str().is_empty()),
         cache: Some(cache.to_owned()),
     };
-    let n = crate::scanner::analyze_item(&mut db, item, &opts, &mut Default::default()).await?;
+    let n = crate::scanner::analyze_item(&mut db, item, &opts, &Default::default()).await?;
     if n > 0 {
         println!("detail {item}: analyzed {n} strm part(s)");
     }

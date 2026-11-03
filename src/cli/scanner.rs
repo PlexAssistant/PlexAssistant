@@ -7,7 +7,7 @@ use super::CliResult;
 use crate::linkres::{self, DEFAULT_UA};
 use crate::plexdb::{self, Db};
 use crate::runtime::{self, DEFAULT_SOCK};
-use crate::scanner::{self, Options, credits, is_strm};
+use crate::scanner::{self, Options, Refreshed, credits, is_strm};
 
 /// Run as the Plex Scanner replacement. Item and section analyze
 /// invocations run our strm pipeline; every other mode (matcher, credits,
@@ -128,12 +128,10 @@ pub async fn run(args: Args) -> CliResult {
         cache: Some(runtime::cache_path()),
     };
     let mut db = Db::open(&flags.library_db)?;
-    // one refresh budget per target for the whole run
-    let mut refreshed = std::collections::HashSet::new();
     if flags.item > 0 {
-        analyze_one(&mut db, flags.item, &opts, &mut refreshed).await
+        analyze_one(&mut db, flags.item, &opts).await
     } else {
-        analyze_section(&mut db, flags.section, &opts, &mut refreshed).await
+        analyze_section(&mut db, flags.section, &opts).await
     }
 }
 
@@ -321,17 +319,12 @@ async fn input_duration(ffprobe: &str, input: &str, ua: &str) -> f64 {
         .unwrap_or(0.0)
 }
 
-async fn analyze_one(
-    db: &mut Db,
-    item: i64,
-    opts: &Options,
-    refreshed: &mut std::collections::HashSet<String>,
-) -> CliResult {
+async fn analyze_one(db: &mut Db, item: i64, opts: &Options) -> CliResult {
     let parts = db.parts_by_item(item)?;
     if !parts.iter().any(|p| is_strm(&p.file)) {
         return Err(exec_original().into()); // local media: keep the official path
     }
-    let n = scanner::analyze_item(db, item, opts, refreshed).await?;
+    let n = scanner::analyze_item(db, item, opts, &Refreshed::default()).await?;
     println!("item {item}: analyzed {n} strm part(s)");
     // A single episode is enough to know its season. Intros need two
     // episodes to compare, so the season is only visited when it has them;
@@ -373,12 +366,7 @@ async fn detect_intros(db: &mut Db, seasons: &[i64], opts: &Options) {
 /// the single library connection and run one item at a time.
 const PROBE_CONCURRENCY: usize = 3;
 
-async fn analyze_section(
-    db: &mut Db,
-    section: i64,
-    opts: &Options,
-    refreshed: &mut std::collections::HashSet<String>,
-) -> CliResult {
+async fn analyze_section(db: &mut Db, section: i64, opts: &Options) -> CliResult {
     let ids = db.items_by_section(section)?;
     let mut pending = Vec::new();
     for &id in &ids {
@@ -388,7 +376,8 @@ async fn analyze_section(
         }
     }
 
-    let shared = std::sync::Arc::new(std::sync::Mutex::new(std::mem::take(refreshed)));
+    // one refresh budget per target for the whole run
+    let refreshed = Refreshed::default();
     let mut in_flight = tokio::task::JoinSet::new();
     let mut rest = pending.into_iter();
     loop {
@@ -396,9 +385,9 @@ async fn analyze_section(
             && let Some((id, parts)) = rest.next()
         {
             let opts = opts.clone();
-            let refreshed = shared.clone();
+            let refreshed = refreshed.clone();
             in_flight.spawn(async move {
-                let probed = scanner::probe_item(parts, id, &opts, refreshed).await;
+                let probed = scanner::probe_item(parts, id, &opts, &refreshed).await;
                 (id, probed)
             });
         }
@@ -414,12 +403,6 @@ async fn analyze_section(
         };
         if let Err(e) = scanner::write_item(db, id, probed, opts) {
             println!("item {id}: {e}");
-        }
-    }
-    if let Ok(guard) = std::sync::Arc::try_unwrap(shared).map(|m| m.into_inner()) {
-        match guard {
-            Ok(seen) => *refreshed = seen,
-            Err(poisoned) => *refreshed = poisoned.into_inner(),
         }
     }
     if let Err(e) = db.checkpoint() {

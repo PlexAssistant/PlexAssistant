@@ -9,6 +9,11 @@
 - A scan's resolve and refresh were recorded as playback reads, so the
   daily cloud usage counted a scan's cache hits and file sizes.
 
+### Changed
+
+- A scan opens the assistant cache once per item instead of once per
+  lookup.
+
 ## [0.4.5] — 2026-11-03
 
 ### Fixed
