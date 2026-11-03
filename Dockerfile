@@ -46,7 +46,7 @@ RUN ./configure \
         --extra-cflags=-w \
         --enable-version3 --disable-autodetect --enable-openssl --enable-zlib \
         --disable-everything \
-        --enable-muxer=null --enable-encoder=wrapped_avframe --enable-filter=blackdetect,silencedetect,format,fps,scale \
+        --enable-muxer=null,wav --enable-encoder=wrapped_avframe,pcm_s16le --enable-filter=blackdetect,silencedetect,format,fps,scale,aresample \
         --disable-doc --disable-debug --disable-avdevice \
         --enable-demuxers --enable-parsers --enable-decoders --enable-bsfs \
         --enable-protocol=file,pipe,data,crypto,tcp,tls,http,https,httpproxy && \
@@ -85,3 +85,7 @@ LABEL org.opencontainers.image.title="PlexAssistant" \
 COPY packaging/s6-overlay/ /etc/s6-overlay/
 COPY --from=ffprobe /out/ffprobe /out/ffmpeg /usr/local/bin/
 COPY --from=build /out/assistant /usr/local/bin/assistant
+# fpcalc for the intro fingerprinting (tiny; pulls no ffmpeg of its own)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libchromaprint-tools && \
+    rm -rf /var/lib/apt/lists/*
