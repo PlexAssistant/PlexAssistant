@@ -237,11 +237,17 @@ mod tests {
         drop(conn);
 
         let cache = Cache::open(&path).unwrap();
-        assert!(cache.should_skip("http://x/file/old", SystemTime::now()).unwrap());
+        assert!(
+            cache
+                .should_skip("http://x/file/old", SystemTime::now())
+                .unwrap()
+        );
         // the migrated row is temporary: past its backoff it is tried again
-        assert!(!cache
-            .should_skip("http://x/file/old", SystemTime::now() + 2 * WEEK)
-            .unwrap());
+        assert!(
+            !cache
+                .should_skip("http://x/file/old", SystemTime::now() + 2 * WEEK)
+                .unwrap()
+        );
     }
 
     #[test]
