@@ -6,6 +6,8 @@
 
 - Intro detection after a section scan visited every season in the
   library, not only the seasons of that section.
+- A scan's resolve and refresh were recorded as playback reads, so the
+  daily cloud usage counted a scan's cache hits and file sizes.
 
 ## [0.4.5] — 2026-11-03
 

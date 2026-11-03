@@ -236,12 +236,13 @@ async fn handle_resolve(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
         .await
 }
 
-/// Re-resolves unconditionally; called when playback hit a dead link.
-/// Never called in bulk.
+/// Re-resolves unconditionally; called when playback hit a dead link, or
+/// once per target when a scan found its cached link dead. Never called
+/// in bulk.
 async fn handle_refresh(State(d): State<Arc<Daemon>>, body: Bytes) -> Response {
     match decode(&body) {
         Ok(req) => {
-            d.resolve_and_store(&req.target, true, req.offset, true)
+            d.resolve_and_store(&req.target, true, req.offset, req.playback)
                 .await
         }
         Err(e) => error(StatusCode::BAD_REQUEST, e),
