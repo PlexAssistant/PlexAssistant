@@ -95,6 +95,7 @@ async fn analyzes_remote_strm_parts_only() {
         user_agent: linkres::DEFAULT_UA.into(),
         runtime_sock: None,
         cache: None,
+        ..Default::default()
     };
 
     assert_eq!(
@@ -254,6 +255,7 @@ async fn prefers_the_daemon_cache() {
         user_agent: linkres::DEFAULT_UA.into(),
         runtime_sock: Some(sock),
         cache: None,
+        ..Default::default()
     };
 
     assert_eq!(
@@ -332,6 +334,7 @@ async fn expired_cache_entry_refreshes_eagerly() {
         user_agent: linkres::DEFAULT_UA.into(),
         runtime_sock: Some(sock),
         cache: None,
+        ..Default::default()
     };
 
     assert_eq!(

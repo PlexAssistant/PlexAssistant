@@ -29,6 +29,11 @@ services:
       - PLEX_CLAIM=
       # credits detection: auto (default), heuristic (no model) or model
       # - ASSISTANT_CREDITS=auto
+      # Chinese genre, mood and style labels. Off unless set.
+      # - ZH_LOCALIZE=tags
+      # Drop those locks and leave the labels. Refresh metadata afterwards
+      # to pull the source values back.
+      # - ZH_LOCALIZE_UNLOCK=1
     volumes:
       # Plex data: database, metadata, the assistant cache — back this up
       - ./config:/config

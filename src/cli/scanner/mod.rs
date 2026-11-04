@@ -42,6 +42,8 @@ pub async fn run(args: Args) -> CliResult {
         user_agent: flags.ua,
         runtime_sock: Some(flags.runtime_sock).filter(|s| !s.as_os_str().is_empty()),
         cache: Some(runtime::cache_path()),
+        localize: crate::localize::Localize::from_env(),
+        localize_unlock: crate::localize::unlock_from_env(),
     };
     let mut db = Db::open(&flags.library_db)?;
     if flags.item > 0 {
@@ -135,7 +137,9 @@ async fn analyze_section(db: &mut Db, section: i64, opts: &Options) -> CliResult
         };
         if let Err(e) = scanner::write_item(db, id, probed, opts) {
             println!("item {id}: {e}");
+            continue;
         }
+        scanner::localize_item(db, id, opts);
     }
     if let Err(e) = db.checkpoint() {
         println!("checkpoint: {e}");
