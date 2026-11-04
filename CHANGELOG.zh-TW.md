@@ -4,17 +4,19 @@
 
 ### 新增
 
-- 本地化支援九種語言,即 PlexEditions 的 `locales` 清單:`LOCALIZE_LANG`
-  指定語言(預設 `zh-Hans`;另有 `zh-Hant`、`en`、`ja`、`ko`、`ar`、
-  `fr`、`ru`、`es`)。標籤查該語言的表,演職員以該語言向 TMDB 要,
-  兩種中文都寫拼音排序題名。繁體題名現在經過 OpenCC 的繁轉簡對照再讀,
-  `重慶森林` 排成 `CQSL`,不再讀成 `zhòng` 的 `Z`。
+- 本地化支援八種語言:`LOCALIZE_LANG` 指定語言(預設 `zh-Hans`;另有
+  `zh-Hant`、`ja`、`ko`、`ar`、`fr`、`ru`、`es`)。標籤查該語言的表,
+  演職員以該語言向 TMDB 要,兩種中文都寫拼音排序題名。繁體題名現在經過
+  OpenCC 的繁轉簡對照再讀,`重慶森林` 排成 `CQSL`,不再讀成 `zhòng` 的 `Z`。
 
 ### 變更
 
-- 本地化邏輯拆成 plex-localize crate,另以獨立的 PlexLocalize 儲存庫
-  繼續發佈。`LOCALIZE=sort,tags,people` 取代 `ZH_LOCALIZE`,
-  `LOCALIZE_UNLOCK` 取代 `ZH_LOCALIZE_UNLOCK`;舊名仍可用,意即中文。
+- 本地化邏輯拆成 plex-localize crate,另附獨立的 `localize` 執行檔、
+  Docker 映像,以及按 `LOCALIZE_EVERY` 間隔重跑的 `watch` 模式。
+  題名、標籤、導演編劇改經 Plex API 寫入——線上媒體庫在這些欄位上的
+  全文索引表會拒絕外部連線直寫,直寫在目前的 Plex 上早已失效——
+  演員則換到庫裡已有的譯名行。`LOCALIZE=sort,tags,people` 取代
+  `ZH_LOCALIZE`,`LOCALIZE_UNLOCK` 取代 `ZH_LOCALIZE_UNLOCK`;舊名不再回應。
 
 ## [0.6.0] — 2026-11-04
 

@@ -44,6 +44,7 @@ pub async fn run(args: Args) -> CliResult {
         cache: Some(runtime::cache_path()),
         localize: plex_localize::Localize::from_env(),
         localize_unlock: plex_localize::unlock_from_env(),
+        localize_db: Some(flags.library_db.clone()),
     };
     let mut db = Db::open(&flags.library_db)?;
     if flags.item > 0 {
