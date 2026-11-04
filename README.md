@@ -1,6 +1,6 @@
 # PlexAssistant
 
-English | [正體中文](README.zh-TW.md)
+English | [简体中文](README.zh-CN.md) | [正體中文](README.zh-TW.md)
 
 Native `.strm` support for Plex: media info shows up, and items play.
 
