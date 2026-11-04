@@ -10,7 +10,10 @@ use super::expiry::sniff_expiry;
 
 /// Identifies us to cloud drives; links can be bound to it, so scan and
 /// playback must use the same value.
-pub const DEFAULT_UA: &str = "PlexAssistant/0.1";
+/// The User-Agent ffprobe 9.0.2 sends on its own. Resolve and playback
+/// share it: a signed link is bound to the header that opened it, so the
+/// two must keep sending the same value.
+pub const DEFAULT_UA: &str = "Lavf/63.1.102";
 
 /// Requests per resolution, the first one included (Go's limit).
 const MAX_REQUESTS: usize = 10;

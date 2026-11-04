@@ -19,6 +19,11 @@
 
 ### Changed
 
+- The User-Agent on a resolved link and on playback is `Lavf/63.1.102`,
+  the value ffprobe 9.0.2 sends on its own. A signed link is bound to
+  the header that opened it, so both sides send the same value. Links
+  signed under `PlexAssistant/0.1` are fetched again on the next scan
+  or playback.
 - The scanner, the runtime and `assistant intro` default to
   `/usr/local/bin/ffprobe` and `/usr/local/bin/ffmpeg`, the binaries the
   image installs. `ASSISTANT_FFPROBE` and `ASSISTANT_FFMPEG` still

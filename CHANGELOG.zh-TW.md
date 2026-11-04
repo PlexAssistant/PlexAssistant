@@ -16,6 +16,9 @@
 
 ### 變更
 
+- 解析直鏈和播放使用的 User-Agent 改為 `Lavf/63.1.102`,也就是 ffprobe
+  9.0.2 自己發出的值。簽名連結綁的是開啟它的那個標頭,所以兩邊送同一個值。
+  以 `PlexAssistant/0.1` 簽過的連結,下次掃描或播放會重新取得。
 - 掃描器、runtime 和 `assistant intro` 預設使用映像安裝的
   `/usr/local/bin/ffprobe` 與 `/usr/local/bin/ffmpeg`。
   `ASSISTANT_FFPROBE` 和 `ASSISTANT_FFMPEG` 仍可覆蓋。`fpcalc` 維持命令名。
