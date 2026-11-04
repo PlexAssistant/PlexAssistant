@@ -16,7 +16,7 @@
 # To build the image from this checkout instead, see compose.dev.yaml.
 services:
   plex:
-    # pin a release with its tag, e.g. :v0.4.5 (see CHANGELOG.md)
+    # pin a release with its tag, e.g. :v0.7.0 (see CHANGELOG.md)
     image: ghcr.io/plexassistant/plexassistant:latest
     environment:
       # run Plex as this host uid/gid (match your file owner)
@@ -27,21 +27,14 @@ services:
       - VERSION=docker
       # one-time server claim; leave empty if /config is already claimed
       - PLEX_CLAIM=
-      # credits detection: auto (default), heuristic (no model) or model
-      # - ASSISTANT_CREDITS=auto
-      # sort titles, tags and cast names, in the language LOCALIZE_LANG
-      # names (zh-Hans by default; en, zh-Hant, ja, ko, ar, fr, ru, es too).
-      # Off unless named. ZH_LOCALIZE still works.
+      # sort titles, tag labels and cast names, in the language
+      # LOCALIZE_LANG names. zh-Hans by default; also zh-Hant, ja, ko, ar,
+      # fr, ru, es. Off unless named.
       # - LOCALIZE=sort,tags,people
       # - LOCALIZE_LANG=zh-Hans
-      # another TMDB v3 key; unset uses the built-in one
-      # - TMDB_API_KEY=
-      # movie edition titles (the PlexEditions feature). The listener is
-      # off unless ASSISTANT_EDITIONS=1; EDITION_* shapes the text
+      # movie edition titles (the PlexEditions feature); off unless named
       # - ASSISTANT_EDITIONS=1
       # - EDITION_LANG=zh
-      # drop those locks; refresh metadata to restore
-      # - LOCALIZE_UNLOCK=1
     volumes:
       # Plex data: database, metadata, the assistant cache — back this up
       - ./config:/config
