@@ -19,5 +19,5 @@ pub use analyze::{
 pub use probe::{
     Disposition, Format, FormatTags, ProbeError, ProbeResult, Stream, Tags, duration_ms, probe,
 };
-pub(crate) use redact::redact_urls;
+pub use redact::redact_urls;
 pub use spec::build_spec;

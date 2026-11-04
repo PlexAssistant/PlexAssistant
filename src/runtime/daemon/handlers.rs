@@ -39,7 +39,12 @@ pub(super) async fn handle_resolve(State(d): State<Arc<Daemon>>, body: Bytes) ->
             // and that open is the read, from the start or from later on.
             // The quota is not touched.
             if req.playback
-                && let Err(e) = d.note_read(&host_of(&req.target), entry.size, req.offset > 0)
+                && let Err(e) = d.cache.record_read(
+                    &host_of(&req.target),
+                    entry.size,
+                    req.offset > 0,
+                    SystemTime::now(),
+                )
             {
                 return error(StatusCode::INTERNAL_SERVER_ERROR, e);
             }

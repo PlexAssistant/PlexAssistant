@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use rusqlite::{OptionalExtension, Result, params};
+use rusqlite::{Connection, OptionalExtension, Result, params};
 
 use super::cache::{Cache, unix_seconds};
 
@@ -128,10 +128,7 @@ impl Cache {
 
     /// Forgets a target after any success.
     pub fn clear_failure(&self, target: &str) -> Result<()> {
-        self.conn()
-            .prepare_cached("DELETE FROM failures WHERE target_url=?")?
-            .execute([target])?;
-        Ok(())
+        clear_failure_on(&*self.conn(), target)
     }
 
     /// Reports whether the target should not be resolved again.
@@ -155,6 +152,12 @@ impl Cache {
             .prepare_cached("SELECT count(*) FROM failures")?
             .query_row([], |r| r.get(0))
     }
+}
+
+pub(super) fn clear_failure_on(conn: &Connection, target: &str) -> Result<()> {
+    conn.prepare_cached("DELETE FROM failures WHERE target_url=?")?
+        .execute([target])?;
+    Ok(())
 }
 
 #[cfg(test)]
