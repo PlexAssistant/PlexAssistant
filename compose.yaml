@@ -29,9 +29,11 @@ services:
       - PLEX_CLAIM=
       # credits detection: auto (default), heuristic (no model) or model
       # - ASSISTANT_CREDITS=auto
-      # Chinese sort titles, and genre, mood and style labels. Off unless set.
-      # sort, tags — write the ones named.
-      # - ZH_LOCALIZE=sort,tags
+      # Chinese sort titles, genre, mood and style labels, and cast names.
+      # Off unless set. sort, tags, people — write the ones named. people
+      # uses a built-in TMDB v3 key unless TMDB_API_KEY is set.
+      # - ZH_LOCALIZE=sort,tags,people
+      # - TMDB_API_KEY=
       # Drop those locks and leave what was written. Refresh metadata afterwards
       # to pull the source values back.
       # - ZH_LOCALIZE_UNLOCK=1
