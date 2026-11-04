@@ -9,7 +9,7 @@
 use rusqlite::params;
 
 use super::Db;
-use crate::localize::{self, LOCK_GENRE, LOCK_MOOD, LOCK_STYLE};
+use crate::localize::{self, LOCK_GENRE, LOCK_MOOD, LOCK_STYLE, LOCK_TITLE_SORT};
 
 /// Plex tag types. Genre is what a film or show carries. Mood and style are
 /// what music carries. The same lock ids apply to either.
@@ -25,6 +25,48 @@ struct TagLink {
 }
 
 impl Db {
+    /// Writes the sort title from the stored display title, and locks it.
+    /// A locked sort title is left as stored. A title with nothing to sort
+    /// is left as stored. Returns whether the sort title changed.
+    pub fn localize_sort(&mut self, item_id: i64) -> Result<bool, super::WriteError> {
+        self.write_known(|tx| {
+            let (title, title_sort, user_fields) = item_title(tx, item_id)?;
+            if field_locked(&user_fields, LOCK_TITLE_SORT) {
+                return Ok(false);
+            }
+            let Some(sort) = localize::sort_title(&title) else {
+                return Ok(false);
+            };
+            if title_sort.as_deref() == Some(sort.as_str()) {
+                return Ok(false);
+            }
+            let locks = localize::lock_field(&user_fields, LOCK_TITLE_SORT);
+            tx.execute(
+                "UPDATE metadata_items SET title_sort=?, user_fields=? WHERE id=?",
+                params![sort, locks, item_id],
+            )?;
+            Ok(true)
+        })
+    }
+
+    /// Drops the sort-title lock on an item. The sort title stays. Returns
+    /// whether a lock was removed.
+    pub fn unlock_sort(&mut self, item_id: i64) -> Result<bool, super::WriteError> {
+        self.write_known(|tx| {
+            let user_fields = item_fields(tx, item_id)?;
+            let locks = localize::unlock_field(&user_fields, LOCK_TITLE_SORT);
+            if locks == user_fields {
+                return Ok(false);
+            }
+            let stored = if locks.is_empty() { None } else { Some(locks) };
+            tx.execute(
+                "UPDATE metadata_items SET user_fields=? WHERE id=?",
+                params![stored, item_id],
+            )?;
+            Ok(true)
+        })
+    }
+
     /// Rewrites genre, mood and style labels that the table knows, and locks
     /// each kind that changed. A locked kind is left as stored.
     pub fn localize_tags(&mut self, item_id: i64) -> Result<usize, super::WriteError> {
@@ -69,7 +111,7 @@ impl Db {
         self.write_known(|tx| {
             let user_fields = item_fields(tx, item_id)?;
             let mut locks = user_fields.clone();
-            for id in localize::LOCKS {
+            for id in localize::TAG_LOCKS {
                 locks = localize::unlock_field(&locks, id);
             }
             if locks == user_fields {
@@ -114,6 +156,18 @@ fn field_locked(user_fields: &str, id: i64) -> bool {
         };
         list.split('|').any(|s| s.parse::<i64>().ok() == Some(id))
     })
+}
+
+fn item_title(
+    tx: &rusqlite::Transaction,
+    item_id: i64,
+) -> Result<(String, Option<String>, String), rusqlite::Error> {
+    tx.query_row(
+        "SELECT IFNULL(title, ''), title_sort, IFNULL(user_fields, '')
+         FROM metadata_items WHERE id=?",
+        [item_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
 }
 
 fn item_fields(tx: &rusqlite::Transaction, item_id: i64) -> Result<String, rusqlite::Error> {
@@ -188,14 +242,13 @@ fn denormalized_tags(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::plexdb::Db;
 
     const SCHEMA: &str = r#"
         CREATE TABLE schema_migrations (version varchar(255) NOT NULL);
         INSERT INTO schema_migrations VALUES ('500000000001.231');
         CREATE TABLE metadata_items (
-          id INTEGER PRIMARY KEY, title TEXT, user_fields TEXT, tags_genre TEXT);
+          id INTEGER PRIMARY KEY, title TEXT, title_sort TEXT, user_fields TEXT, tags_genre TEXT);
         CREATE TABLE tags (
           id INTEGER PRIMARY KEY AUTOINCREMENT, metadata_item_id INTEGER,
           tag TEXT, tag_type INTEGER, created_at INTEGER, updated_at INTEGER);
@@ -269,5 +322,75 @@ mod tests {
         assert_eq!(fields, "lockedFields=2");
         assert_eq!(genre, "动作");
         assert!(!db.unlock_tags(1).unwrap());
+    }
+
+    #[test]
+    fn sort_title_is_written_and_locked() {
+        let (_dir, mut db) = db();
+        db.conn
+            .execute(
+                "INSERT INTO metadata_items (id, title, title_sort) VALUES (1, '重庆森林', '重庆森林')",
+                [],
+            )
+            .unwrap();
+        assert!(db.localize_sort(1).unwrap());
+        let (title, sort, fields): (String, String, String) = db
+            .conn
+            .query_row(
+                "SELECT title, title_sort, user_fields FROM metadata_items WHERE id=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(title, "重庆森林");
+        assert_eq!(sort, "CQSL");
+        assert_eq!(fields, "lockedFields=2");
+        assert!(!db.localize_sort(1).unwrap());
+    }
+
+    #[test]
+    fn a_locked_sort_title_is_left() {
+        let (_dir, mut db) = db();
+        db.conn
+            .execute(
+                "INSERT INTO metadata_items (id, title, title_sort, user_fields)
+                 VALUES (1, '重庆森林', 'KEEP', 'lockedFields=2')",
+                [],
+            )
+            .unwrap();
+        assert!(!db.localize_sort(1).unwrap());
+        let sort: String = db
+            .conn
+            .query_row(
+                "SELECT title_sort FROM metadata_items WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(sort, "KEEP");
+    }
+
+    #[test]
+    fn unlock_drops_the_sort_lock_and_keeps_the_sort_title() {
+        let (_dir, mut db) = db();
+        db.conn
+            .execute(
+                "INSERT INTO metadata_items (id, title, title_sort, user_fields)
+                 VALUES (1, '重庆森林', 'CQSL', 'lockedFields=1|2')",
+                [],
+            )
+            .unwrap();
+        assert!(db.unlock_sort(1).unwrap());
+        let (sort, fields): (String, String) = db
+            .conn
+            .query_row(
+                "SELECT title_sort, user_fields FROM metadata_items WHERE id=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(sort, "CQSL");
+        assert_eq!(fields, "lockedFields=1");
+        assert!(!db.unlock_sort(1).unwrap());
     }
 }
