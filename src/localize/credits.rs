@@ -145,8 +145,8 @@ fn push_once(list: &mut Vec<Credit>, credit: Credit) {
     list.push(credit);
 }
 
-/// A writing credit Plex files under writers. A novel, a comic or a story
-/// the script was drawn from is not one.
+/// A writing credit Plex files under writers. The original story counts;
+/// a novel or a comic the script was drawn from does not.
 fn is_writer(job: &str) -> bool {
     matches!(
         job,

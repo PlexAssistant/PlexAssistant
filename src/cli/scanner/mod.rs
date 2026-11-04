@@ -58,6 +58,7 @@ async fn analyze_one(db: &mut Db, item: i64, opts: &Options) -> CliResult {
     if !parts.iter().any(|p| is_strm(&p.file)) {
         return Err(exec_original().into()); // local media: keep the official path
     }
+    warn_missing_ffprobe(&opts.ffprobe);
     let n = scanner::analyze_item(db, item, opts, &Refreshed::default()).await?;
     println!("item {item}: analyzed {n} strm part(s)");
     // A single episode is enough to know its season. Intros need two
@@ -111,6 +112,9 @@ async fn analyze_section(db: &mut Db, section: i64, opts: &Options) -> CliResult
     }
 
     // one refresh budget per target for the whole run
+    if !pending.is_empty() {
+        warn_missing_ffprobe(&opts.ffprobe);
+    }
     let refreshed = Refreshed::default();
     let mut in_flight = tokio::task::JoinSet::new();
     let mut rest = pending.into_iter();
@@ -150,6 +154,15 @@ async fn analyze_section(db: &mut Db, section: i64, opts: &Options) -> CliResult
     }
     println!("section {section}: {} item(s) processed", ids.len());
     Ok(0)
+}
+
+/// Says once when the configured ffprobe is not there. The default is the
+/// path inside the image; outside the image nothing sits there until
+/// `ASSISTANT_FFPROBE` names the host's own.
+fn warn_missing_ffprobe(ffprobe: &str) {
+    if !Path::new(ffprobe).is_file() {
+        println!("ffprobe not found at {ffprobe}; set ASSISTANT_FFPROBE to name the one to use");
+    }
 }
 
 /// Replaces this process with the preserved Plex binary so unhandled

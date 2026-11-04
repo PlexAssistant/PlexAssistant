@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The scan says up front when the configured ffprobe is not there and
+  names `ASSISTANT_FFPROBE`, instead of leaving bare exec errors per
+  item.
+
 ### Fixed
 
 - Every label of an unlocked kind now moves in one pass. The lock the
