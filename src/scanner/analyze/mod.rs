@@ -33,9 +33,9 @@ pub struct Options {
     /// assistant cache; None falls back to `ASSISTANT_CACHE`, then the
     /// default path inside the container
     pub cache: Option<PathBuf>,
-    /// Chinese tag labels. Off rewrites nothing.
+    /// Chinese sort titles and tag labels. Off rewrites nothing.
     pub localize: Localize,
-    /// Drop the tag locks instead of writing labels.
+    /// Drop the locks this pass wrote instead of writing.
     pub localize_unlock: bool,
 }
 
@@ -228,22 +228,30 @@ pub fn write_item(
     Ok(probed.len())
 }
 
-/// Rewrites genre, mood and style labels when `opts.localize` asks, or drops
-/// their locks when `opts.localize_unlock` is set. A failure is logged and
+/// Rewrites the sort title and tag labels `opts.localize` names, or drops
+/// those locks when `opts.localize_unlock` is set. A failure is logged and
 /// does not fail the scan: the media rows are already written.
 pub fn localize_item(db: &mut Db, item_id: i64, opts: &Options) {
-    if !opts.localize.tags && !opts.localize_unlock {
+    if opts.localize_unlock {
+        match (db.unlock_sort(item_id), db.unlock_tags(item_id)) {
+            (Ok(sort), Ok(tags)) if sort || tags => println!("item {item_id}: unlocked"),
+            (Err(e), _) | (_, Err(e)) => println!("item {item_id}: localize: {e}"),
+            _ => {}
+        }
         return;
     }
-    let result = if opts.localize_unlock {
-        db.unlock_tags(item_id).map(|dropped| dropped.then_some("unlocked"))
-    } else {
-        db.localize_tags(item_id)
-            .map(|n| (n > 0).then_some("tags"))
-    };
-    match result {
-        Ok(Some(what)) => println!("item {item_id}: {what}"),
-        Ok(None) => {}
-        Err(e) => println!("item {item_id}: localize: {e}"),
+    if opts.localize.sort {
+        match db.localize_sort(item_id) {
+            Ok(true) => println!("item {item_id}: sort"),
+            Ok(false) => {}
+            Err(e) => println!("item {item_id}: localize: {e}"),
+        }
+    }
+    if opts.localize.tags {
+        match db.localize_tags(item_id) {
+            Ok(n) if n > 0 => println!("item {item_id}: tags"),
+            Ok(_) => {}
+            Err(e) => println!("item {item_id}: localize: {e}"),
+        }
     }
 }

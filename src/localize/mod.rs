@@ -1,10 +1,12 @@
-//! Optional Chinese labels for genre, mood and style tags Plex already stored.
+//! Optional Chinese sort titles and tag labels for fields Plex already stored.
 //!
-//! Off unless `ZH_LOCALIZE` contains `tags`. A tag the table does not know
-//! is left as stored. A label that was written is locked, so turning the
-//! switch off leaves it. `ZH_LOCALIZE_UNLOCK` drops those locks and does not
-//! write labels; the next metadata refresh can put the source values back.
+//! Off unless `ZH_LOCALIZE` names the work. `sort` writes a sort title.
+//! `tags` rewrites genre, mood and style labels the table knows. A field that
+//! was written is locked, so turning the switch off leaves it.
+//! `ZH_LOCALIZE_UNLOCK` drops those locks and does not write; the next
+//! metadata refresh can put the source values back.
 
+mod pinyin;
 mod tags;
 
 use std::collections::BTreeSet;
@@ -15,22 +17,24 @@ pub const ENV: &str = "ZH_LOCALIZE";
 /// `ZH_LOCALIZE_UNLOCK`. Set to drop the locks this pass wrote.
 pub const UNLOCK_ENV: &str = "ZH_LOCALIZE_UNLOCK";
 
-/// Whether a scan should rewrite tags.
+/// Whether a scan should rewrite sort titles or tags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Localize {
+    pub sort: bool,
     pub tags: bool,
 }
 
 impl Localize {
-    /// `tags` anywhere in the comma-separated list turns the rewrite on.
-    /// Any other name is ignored.
+    /// `sort` or `tags` anywhere in the comma-separated list turns that
+    /// rewrite on. Any other name is ignored.
     pub fn parse(value: Option<&str>) -> Self {
-        let tags = value.is_some_and(|value| {
-            value
-                .split(',')
-                .any(|name| name.trim() == "tags")
-        });
-        Self { tags }
+        let named = |want: &str| {
+            value.is_some_and(|value| value.split(',').any(|name| name.trim() == want))
+        };
+        Self {
+            sort: named("sort"),
+            tags: named("tags"),
+        }
     }
 
     /// The choice named by [`ENV`].
@@ -59,15 +63,22 @@ pub fn translate_tag(label: &str) -> Option<&'static str> {
     tags::translate(label)
 }
 
+/// The sort title for `title`, or nothing when it should be left as stored.
+/// Punctuation is dropped. A title that mixes Han with kana is skipped.
+pub fn sort_title(title: &str) -> Option<String> {
+    pinyin::initials(title)
+}
+
 /// Field ids Plex stores in `metadata_items.user_fields` as
-/// `lockedFields=<id>|<id>`. Measured against Plex 1.43.5: locking `genre`
-/// wrote `1`, `mood` wrote `300`, `style` wrote `301`.
+/// `lockedFields=<id>|<id>`. Measured against Plex 1.43.5: locking `titleSort`
+/// wrote `2`. Locking `mood` wrote `300`, `style` wrote `301`.
+pub const LOCK_TITLE_SORT: i64 = 2;
 pub const LOCK_GENRE: i64 = 1;
 pub const LOCK_MOOD: i64 = 300;
 pub const LOCK_STYLE: i64 = 301;
 
-/// The lock ids this pass owns.
-pub const LOCKS: [i64; 3] = [LOCK_GENRE, LOCK_MOOD, LOCK_STYLE];
+/// The lock ids the tag rewrite owns.
+pub const TAG_LOCKS: [i64; 3] = [LOCK_GENRE, LOCK_MOOD, LOCK_STYLE];
 
 /// `user_fields` with `id` added to the `lockedFields` list. Other keys in
 /// the column are kept. Adding an id that is already there changes nothing.
@@ -138,14 +149,25 @@ mod tests {
     #[test]
     fn unset_selects_nothing() {
         assert_eq!(Localize::parse(None), Localize::default());
+        assert!(!Localize::parse(Some("")).sort);
         assert!(!Localize::parse(Some("")).tags);
-        assert!(!Localize::parse(Some("sort,people")).tags);
+        assert!(!Localize::parse(Some("people")).sort);
+        assert!(!Localize::parse(Some("people")).tags);
     }
 
     #[test]
-    fn tags_is_the_only_name() {
-        assert!(Localize::parse(Some("tags")).tags);
-        assert!(Localize::parse(Some("sort, tags")).tags);
+    fn names_are_independent() {
+        let both = Localize::parse(Some("sort, tags"));
+        assert!(both.sort);
+        assert!(both.tags);
+        assert!(Localize::parse(Some("sort")).sort);
+        assert!(!Localize::parse(Some("sort")).tags);
+    }
+
+    #[test]
+    fn sort_title_uses_initials() {
+        assert_eq!(sort_title("重庆森林").as_deref(), Some("CQSL"));
+        assert_eq!(sort_title("鬼滅の刃"), None);
     }
 
     #[test]
@@ -176,11 +198,11 @@ mod tests {
 
     #[test]
     fn unlocking_drops_only_that_field() {
-        assert_eq!(unlock_field("lockedFields=1|2", LOCK_GENRE), "lockedFields=2");
-        assert_eq!(unlock_field("lockedFields=1", LOCK_GENRE), "");
         assert_eq!(
-            unlock_field("lockedFields=1|pv:x=1", LOCK_GENRE),
-            "pv:x=1"
+            unlock_field("lockedFields=1|2", LOCK_GENRE),
+            "lockedFields=2"
         );
+        assert_eq!(unlock_field("lockedFields=1", LOCK_GENRE), "");
+        assert_eq!(unlock_field("lockedFields=1|pv:x=1", LOCK_GENRE), "pv:x=1");
     }
 }
