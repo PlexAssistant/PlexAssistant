@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] — 2026-11-04
 
 ### Fixed
 
@@ -259,6 +259,7 @@
   ffprobe, direct SQLite writes, persistent link cache, cloud-drive
   protection (breaker, ledger, quota), install/verify/revert.
 
+[0.5.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.2...v0.4.3
