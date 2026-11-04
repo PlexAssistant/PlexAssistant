@@ -4,6 +4,8 @@
 //! credits is reported as nothing, so a scan can skip the item and keep
 //! going. A name with no Chinese form comes back as the original name.
 
+use std::sync::OnceLock;
+
 use serde::Deserialize;
 
 use super::{Credit, CreditTarget, Credits};
@@ -50,7 +52,7 @@ pub(super) async fn fetch(key: &str, target: CreditTarget) -> Option<Credits> {
         "{API}{path}?api_key={}&language={LANGUAGE}",
         url_encode(key)
     );
-    let bytes = reqwest::Client::new()
+    let bytes = client()
         .get(url)
         .send()
         .await
@@ -62,6 +64,12 @@ pub(super) async fn fetch(key: &str, target: CreditTarget) -> Option<Credits> {
         .ok()?;
     let body: Body = serde_json::from_slice(&bytes).ok()?;
     Some(read(body))
+}
+
+/// One client for the whole scan, so the connection is reused across items.
+fn client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
 }
 
 /// The key goes in the query string, so anything that would change the

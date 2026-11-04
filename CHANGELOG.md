@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.1] — 2026-11-04
+
+### Added
+
+- A scan writes Chinese sort titles, genre, mood and style labels, and
+  cast names when `ZH_LOCALIZE` names them. Unset does nothing. `sort`,
+  `tags` and `people` run independently.
+- `sort` writes the stored title as pinyin initials. The display title
+  stays. 重庆森林 sorts as `CQSL`. A title that mixes Han with kana is
+  left as stored.
+- `tags` rewrites genre, mood and style labels from a local table.
+  `Action` becomes 动作, `Sad` becomes 悲伤. A label the table does not
+  know stays.
+- `people` rewrites director, writer and actor names from the Chinese
+  credits of the item's TMDB id. A film uses its own id. An episode uses
+  the show's id with the season and episode numbers. A show that stores
+  its cast on itself uses the show credits. A name that comes back
+  unchanged stays, and the role stays. A built-in v3 key is used unless
+  `TMDB_API_KEY` is set. A request that does not come back skips that
+  item; the rest of the scan still finishes.
+- A field that was written is locked, so turning the switch off leaves
+  it. `ZH_LOCALIZE_UNLOCK=1` drops those locks and leaves what was
+  written. The next metadata refresh puts the source values back.
+
 ## [0.5.0] — 2026-11-04
 
 ### Fixed
@@ -259,6 +283,7 @@
   ffprobe, direct SQLite writes, persistent link cache, cloud-drive
   protection (breaker, ledger, quota), install/verify/revert.
 
+[0.5.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.3...v0.4.4

@@ -1,5 +1,22 @@
 # 變更日誌
 
+## [0.5.1] — 2026-11-04
+
+### 新增
+
+- 掃描可以依 `ZH_LOCALIZE` 寫入中文排序標題、類型、情緒、風格標籤,以及
+  演職員名字。不設就什麼都不做。`sort`、`tags`、`people` 各自獨立。
+- `sort` 把已存的標題寫成拼音首字母,顯示標題不動。「重庆森林」排成
+  `CQSL`。標題裡有假名就跳過。
+- `tags` 用本地對照表把類型、情緒、風格的英文標籤改成中文。`Action`
+  寫成「动作」,`Sad` 寫成「悲伤」。對照表沒有的留下。
+- `people` 依項目的 TMDB id 取中文演職員名,寫進導演、編劇、演員。電影用
+  自己的 id。單集用劇的 id,加上季號和集號。演職員記在劇上時用劇的列表。
+  沒有中文名就留下原名,角色名不動。自帶一把 v3 金鑰,設了 `TMDB_API_KEY`
+  就改用那一把。請求沒有回來只跳過這一項,掃描的其餘部分照常完成。
+- 改過的欄位會鎖住,關掉開關不會改回去。`ZH_LOCALIZE_UNLOCK=1` 解開這些
+  鎖,寫過的內容留著。下次重新整理中繼資料才會被來源蓋回去。
+
 ## [0.5.0] — 2026-11-04
 
 ### 修復
@@ -213,6 +230,7 @@
   SQLite 直寫、持久連結快取、雲端硬碟保護(熔斷器、台帳、
   配額)、install/verify/revert 生命週期。
 
+[0.5.1]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.3...v0.4.4

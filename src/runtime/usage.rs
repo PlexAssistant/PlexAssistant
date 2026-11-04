@@ -44,7 +44,7 @@ impl Cache {
         seek: bool,
         now: std::time::SystemTime,
     ) -> Result<()> {
-        record_read_on(&*self.conn(), domain, bytes, seek, now)
+        record_read_on(&self.conn(), domain, bytes, seek, now)
     }
 
     /// Usage rows for one day, ordered by domain.

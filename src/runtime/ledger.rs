@@ -128,7 +128,7 @@ impl Cache {
 
     /// Forgets a target after any success.
     pub fn clear_failure(&self, target: &str) -> Result<()> {
-        clear_failure_on(&*self.conn(), target)
+        clear_failure_on(&self.conn(), target)
     }
 
     /// Reports whether the target should not be resolved again.
