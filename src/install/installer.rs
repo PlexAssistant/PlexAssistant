@@ -15,6 +15,13 @@ use super::prefs::{PrefsError, set_prefs};
 /// input is the strm path).
 pub const TARGETS: [&str; 2] = ["Plex Media Scanner", "Plex Transcoder"];
 
+/// Suffix of the preserved Plex binary, next to the name Plex itself calls.
+pub const ORIGINAL_SUFFIX: &str = ".official";
+
+/// Suffix used before [`ORIGINAL_SUFFIX`]. Install renames a leftover of
+/// this name so an already-installed container keeps working.
+const LEGACY_ORIGINAL_SUFFIX: &str = ".real";
+
 const STATE_FILE: &str = "assistant-install.json";
 
 /// A completed install; it lives next to the targets so it disappears
@@ -78,11 +85,12 @@ pub struct Installer {
 
 impl Installer {
     /// Installs all targets. It is idempotent: re-running refreshes the
-    /// symlinks without touching the preserved ".real" originals.
+    /// symlinks without touching the preserved ".official" originals.
     pub fn install(&self) -> Result<(), InstallError> {
         for name in TARGETS {
             let target = self.plex_dir.join(name);
-            let real = real_path(&target);
+            let real = original_path(&target);
+            adopt_legacy_original(&target)?;
 
             let target_missing = is_missing(fs::symlink_metadata(&target));
             let real_missing = is_missing(fs::symlink_metadata(&real));
@@ -124,8 +132,8 @@ impl Installer {
                     }
                     Ok(_) => None,
                 };
-                if is_missing(fs::metadata(real_path(&target))) {
-                    problem = Some("missing .real original".into());
+                if is_missing(fs::metadata(original_path(&target))) {
+                    problem = Some("missing .official original".into());
                 }
                 Check {
                     target: name,
@@ -141,7 +149,7 @@ impl Installer {
     pub fn revert(&self) -> Result<(), InstallError> {
         for name in TARGETS {
             let target = self.plex_dir.join(name);
-            let real = real_path(&target);
+            let real = original_path(&target);
 
             if let Ok(meta) = fs::symlink_metadata(&target)
                 && !meta.file_type().is_symlink()
@@ -168,10 +176,28 @@ impl Installer {
     }
 }
 
-fn real_path(target: &Path) -> PathBuf {
-    let mut real = OsString::from(target);
-    real.push(".real");
-    real.into()
+pub fn original_path(target: &Path) -> PathBuf {
+    suffixed(target, ORIGINAL_SUFFIX)
+}
+
+/// Renames a leftover `.real` original to `.official`. A current original
+/// wins: the leftover is left in place rather than overwritten.
+fn adopt_legacy_original(target: &Path) -> Result<(), InstallError> {
+    let current = original_path(target);
+    let legacy = suffixed(target, LEGACY_ORIGINAL_SUFFIX);
+    if is_missing(fs::symlink_metadata(&legacy)) || fs::symlink_metadata(&current).is_ok() {
+        return Ok(());
+    }
+    fs::rename(&legacy, &current).map_err(InstallError::io(
+        "rename original",
+        legacy.display().to_string(),
+    ))
+}
+
+fn suffixed(target: &Path, suffix: &str) -> PathBuf {
+    let mut path = OsString::from(target);
+    path.push(suffix);
+    path.into()
 }
 
 fn is_missing<T>(result: io::Result<T>) -> bool {
@@ -270,7 +296,7 @@ mod tests {
         // target became a symlink to our binary, original preserved
         assert_eq!(fs::read_link(&scanner).unwrap(), inst.bin_path);
         assert_eq!(
-            fs::read_to_string(real_path(&scanner)).unwrap(),
+            fs::read_to_string(original_path(&scanner)).unwrap(),
             "plex original"
         );
         assert!(
@@ -295,6 +321,23 @@ mod tests {
     }
 
     #[test]
+    fn install_renames_a_legacy_real_original() {
+        let Fixture {
+            _dirs,
+            inst,
+            scanner,
+        } = fixture();
+        inst.install().unwrap();
+        fs::rename(original_path(&scanner), suffixed(&scanner, ".real")).unwrap();
+        inst.install().unwrap();
+        assert_eq!(
+            fs::read_to_string(original_path(&scanner)).unwrap(),
+            "plex original"
+        );
+        assert!(!suffixed(&scanner, ".real").exists());
+    }
+
+    #[test]
     fn install_is_idempotent() {
         let Fixture {
             _dirs,
@@ -302,12 +345,12 @@ mod tests {
             scanner,
         } = fixture();
         inst.install().unwrap();
-        fs::write(real_path(&scanner), "plex original v2").unwrap();
+        fs::write(original_path(&scanner), "plex original v2").unwrap();
         inst.install().unwrap();
         assert_eq!(
-            fs::read_to_string(real_path(&scanner)).unwrap(),
+            fs::read_to_string(original_path(&scanner)).unwrap(),
             "plex original v2",
-            "re-install must not clobber the .real original"
+            "re-install must not clobber the .official original"
         );
     }
 
@@ -351,7 +394,7 @@ mod tests {
         };
         assert_eq!(
             problems(&inst)[0].as_deref(),
-            Some("missing .real original")
+            Some("missing .official original")
         );
 
         inst.install().unwrap();

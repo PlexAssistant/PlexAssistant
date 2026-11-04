@@ -5,5 +5,5 @@
 mod installer;
 mod prefs;
 
-pub use installer::{Check, InstallError, Installer, State, TARGETS};
+pub use installer::{ORIGINAL_SUFFIX, Check, InstallError, Installer, State, TARGETS};
 pub use prefs::{DEFAULT_SUPPORT_DIR, PrefsError, set_prefs};

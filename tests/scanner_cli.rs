@@ -29,7 +29,7 @@ impl Rig {
         let scanner = dir.path().join("Plex Media Scanner");
         symlink(env!("CARGO_BIN_EXE_assistant"), &scanner).unwrap();
         script(
-            &dir.path().join("Plex Media Scanner.real"),
+            &dir.path().join("Plex Media Scanner.official"),
             r#"echo "original: $0 $*""#,
         );
         script(
@@ -132,7 +132,7 @@ async fn unhandled_modes_exec_the_original() {
         stdout(&out).trim(),
         format!(
             "original: {} --scan --refresh --section 1",
-            rig.path("Plex Media Scanner.real").display()
+            rig.path("Plex Media Scanner.official").display()
         )
     );
 }
@@ -204,7 +204,7 @@ async fn analyzes_sections() {
 #[tokio::test]
 async fn missing_original_is_an_error() {
     let rig = Rig::new();
-    std::fs::remove_file(rig.path("Plex Media Scanner.real")).unwrap();
+    std::fs::remove_file(rig.path("Plex Media Scanner.official")).unwrap();
     let out = rig.run(&["--scan"]).await;
     assert_eq!(out.status.code(), Some(1));
     assert!(

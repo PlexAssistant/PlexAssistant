@@ -153,7 +153,7 @@ async fn analyze_section(db: &mut Db, section: i64, opts: &Options) -> CliResult
 pub(super) fn exec_original() -> String {
     let argv: Vec<OsString> = std::env::args_os().collect();
     let mut original = argv.first().cloned().unwrap_or_default();
-    original.push(".real");
+    original.push(crate::install::ORIGINAL_SUFFIX);
     let original = PathBuf::from(original);
     if !original.exists() {
         return format!("original scanner not found at {}", original.display());

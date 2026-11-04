@@ -22,7 +22,7 @@ pub async fn run(args: Args, argv0: &Path) -> CliResult {
         user_agent: DEFAULT_UA.into(),
     };
     let mut real = argv0.as_os_str().to_owned();
-    real.push(".real");
+    real.push(crate::install::ORIGINAL_SUFFIX);
     Ok(transcoder::run(&args.args, Path::new(&real), &resolver, DEFAULT_UA).await)
 }
 
