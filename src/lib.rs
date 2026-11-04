@@ -9,7 +9,8 @@
 //! - [`scanner`] answers a scan: it resolves each `.strm` target, probes the
 //!   direct link with ffprobe, and writes the media rows through [`plexdb`].
 //!   It also detects intro and credits markers. [`localize`] rewrites sort
-//!   titles and genre, mood and style labels when `ZH_LOCALIZE` asks for it.
+//!   titles, genre, mood and style labels, and cast names when `ZH_LOCALIZE`
+//!   asks for it.
 //! - [`transcoder`] answers playback: it swaps a `.strm` input for a direct
 //!   link, then runs the original transcoder.
 //! - [`runtime`] is the resident daemon both of them ask for links. It keeps

@@ -33,7 +33,7 @@ pub struct Options {
     /// assistant cache; None falls back to `ASSISTANT_CACHE`, then the
     /// default path inside the container
     pub cache: Option<PathBuf>,
-    /// Chinese sort titles and tag labels. Off rewrites nothing.
+    /// Chinese sort titles, tag labels and cast names. Off rewrites nothing.
     pub localize: Localize,
     /// Drop the locks this pass wrote instead of writing.
     pub localize_unlock: bool,
@@ -85,7 +85,7 @@ pub async fn analyze_item(
     let parts = db.parts_by_item(item_id)?;
     let probed = probe_item(parts, item_id, opts, refreshed).await;
     let written = write_item(db, item_id, probed, opts)?;
-    localize_item(db, item_id, opts);
+    localize_item(db, item_id, opts).await;
     Ok(written)
 }
 
@@ -228,14 +228,23 @@ pub fn write_item(
     Ok(probed.len())
 }
 
-/// Rewrites the sort title and tag labels `opts.localize` names, or drops
-/// those locks when `opts.localize_unlock` is set. A failure is logged and
-/// does not fail the scan: the media rows are already written.
-pub fn localize_item(db: &mut Db, item_id: i64, opts: &Options) {
+/// Rewrites the sort title, tag labels and cast names `opts.localize` names,
+/// or drops those locks when `opts.localize_unlock` is set. A failure is
+/// logged and does not fail the scan: the media rows are already written.
+/// Cast names use `TMDB_API_KEY` when it is set, and the built-in key otherwise.
+pub async fn localize_item(db: &mut Db, item_id: i64, opts: &Options) {
     if opts.localize_unlock {
-        match (db.unlock_sort(item_id), db.unlock_tags(item_id)) {
-            (Ok(sort), Ok(tags)) if sort || tags => println!("item {item_id}: unlocked"),
-            (Err(e), _) | (_, Err(e)) => println!("item {item_id}: localize: {e}"),
+        match (
+            db.unlock_sort(item_id),
+            db.unlock_tags(item_id),
+            db.unlock_people(item_id),
+        ) {
+            (Ok(sort), Ok(tags), Ok(people)) if sort || tags || people => {
+                println!("item {item_id}: unlocked")
+            }
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+                println!("item {item_id}: localize: {e}")
+            }
             _ => {}
         }
         return;
@@ -253,5 +262,31 @@ pub fn localize_item(db: &mut Db, item_id: i64, opts: &Options) {
             Ok(_) => {}
             Err(e) => println!("item {item_id}: localize: {e}"),
         }
+    }
+    if opts.localize.people {
+        localize_people(db, item_id).await;
+    }
+}
+
+/// Rewrites the cast of one item from its credits. No TMDB id, or a request
+/// that does not come back, leaves the names as stored.
+async fn localize_people(db: &mut Db, item_id: i64) {
+    let key = crate::localize::tmdb_key_from_env();
+    let target = match db.credit_target(item_id) {
+        Ok(Some(target)) => target,
+        Ok(None) => return,
+        Err(e) => {
+            println!("item {item_id}: localize: {e}");
+            return;
+        }
+    };
+    let Some(credits) = crate::localize::fetch_credits(&key, target).await else {
+        println!("item {item_id}: people: skipped");
+        return;
+    };
+    match db.localize_people(item_id, &credits) {
+        Ok(n) if n > 0 => println!("item {item_id}: people"),
+        Ok(_) => {}
+        Err(e) => println!("item {item_id}: localize: {e}"),
     }
 }

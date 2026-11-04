@@ -139,7 +139,7 @@ async fn analyze_section(db: &mut Db, section: i64, opts: &Options) -> CliResult
             println!("item {id}: {e}");
             continue;
         }
-        scanner::localize_item(db, id, opts);
+        scanner::localize_item(db, id, opts).await;
     }
     if let Err(e) = db.checkpoint() {
         println!("checkpoint: {e}");
