@@ -13,7 +13,7 @@ pub struct Args {
     /// library database path
     #[arg(long, default_value = plexdb::DEFAULT_PATH)]
     library_db: PathBuf,
-    #[arg(long, default_value = "ffmpeg")]
+    #[arg(long, default_value = super::DEFAULT_FFMPEG)]
     ffmpeg: String,
     #[arg(long, default_value = "fpcalc")]
     fpcalc: String,

@@ -102,6 +102,13 @@ pub async fn run() -> i32 {
     })
 }
 
+/// The ffprobe and ffmpeg the image installs. A bare name would find
+/// whichever one is first on `PATH`, which outside the image is not the
+/// one the fixtures were captured with. `ASSISTANT_FFPROBE` and
+/// `ASSISTANT_FFMPEG` still override them.
+const DEFAULT_FFPROBE: &str = "/usr/local/bin/ffprobe";
+const DEFAULT_FFMPEG: &str = "/usr/local/bin/ffmpeg";
+
 /// `name` from the environment when set and not empty, else `default`.
 /// Plex starts the scanner and transcoder with its own argv, so their
 /// tool paths and sockets can only be overridden this way.

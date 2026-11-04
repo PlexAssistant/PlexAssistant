@@ -41,7 +41,7 @@ fn credits_key(db: &Db, item: i64) -> Result<String, rusqlite::Error> {
 pub(super) async fn run_credits(file: &OsStr) -> CliResult {
     let file_str = file.to_string_lossy().into_owned();
     let opts = Options {
-        ffprobe: env_or("ASSISTANT_FFPROBE", "ffprobe"),
+        ffprobe: env_or("ASSISTANT_FFPROBE", super::super::DEFAULT_FFPROBE),
         user_agent: DEFAULT_UA.into(),
         runtime_sock: Some(env_or("ASSISTANT_SOCK", DEFAULT_SOCK).into()),
         cache: Some(runtime::cache_path()),
@@ -76,7 +76,7 @@ pub(super) async fn run_credits(file: &OsStr) -> CliResult {
         println!("credits: resolve failed for {file_str}");
         return Ok(0); // nothing to detect; PMS counts this a success
     };
-    let ffmpeg = env_or("ASSISTANT_FFMPEG", "ffmpeg");
+    let ffmpeg = env_or("ASSISTANT_FFMPEG", super::super::DEFAULT_FFMPEG);
     // one probe for every detector: each seeks into the tail from it
     let duration = scanner::probe(&opts.ffprobe, &link.url, &opts.user_agent)
         .await

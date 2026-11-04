@@ -19,6 +19,10 @@
 
 ### Changed
 
+- The scanner, the runtime and `assistant intro` default to
+  `/usr/local/bin/ffprobe` and `/usr/local/bin/ffmpeg`, the binaries the
+  image installs. `ASSISTANT_FFPROBE` and `ASSISTANT_FFMPEG` still
+  override them. `fpcalc` stays a bare command.
 - A scan probe asks ffprobe only for the entries that reach a Plex row:
   the container and its brand, the stream fields `extra_data` is built
   from, and the chapter times. The duration, size and codecs are
