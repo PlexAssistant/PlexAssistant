@@ -94,24 +94,22 @@ impl Daemon {
                 if let Err(e) = booked {
                     return error(StatusCode::INTERNAL_SERVER_ERROR, e);
                 }
-                return error(StatusCode::BAD_GATEWAY, err);
+                return error(
+                    StatusCode::BAD_GATEWAY,
+                    crate::scanner::redact_urls(&err.to_string()),
+                );
             }
         };
         self.breakers.record_success(&domain);
         // A scan probe reads one byte at the start. Playback reads the file:
         // the size the headers reported, and a seek when it opened past the
-        // start. The quota still counts requests only.
+        // start. The quota still counts requests only. The failure row, the
+        // usage row and the link commit together.
         let (bytes, seek) = if playback {
             (link.size, offset > 0)
         } else {
             (1, false)
         };
-        if let Err(e) = self.note_read(&domain, bytes, seek) {
-            return error(StatusCode::INTERNAL_SERVER_ERROR, e);
-        }
-        if let Err(e) = self.cache.clear_failure(target) {
-            return error(StatusCode::INTERNAL_SERVER_ERROR, e);
-        }
         let entry = Entry {
             target: target.to_owned(),
             direct: link.url.clone(),
@@ -120,7 +118,10 @@ impl Daemon {
             size: link.size,
             ..Default::default()
         };
-        if let Err(e) = self.cache.put(&entry) {
+        if let Err(e) = self
+            .cache
+            .store_resolved(&entry, &domain, bytes, seek, SystemTime::now())
+        {
             return error(StatusCode::INTERNAL_SERVER_ERROR, e);
         }
         json(&Resolved {
@@ -128,13 +129,5 @@ impl Daemon {
             expires_at: link.expires_at,
             cached: force,
         })
-    }
-
-    /// Books one cloud read. `bytes` is the size the headers reported;
-    /// `seek` means the caller opened past the start. The quota is not
-    /// touched here.
-    fn note_read(&self, domain: &str, bytes: i64, seek: bool) -> rusqlite::Result<()> {
-        self.cache
-            .record_read(domain, bytes, seek, SystemTime::now())
     }
 }

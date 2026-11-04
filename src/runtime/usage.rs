@@ -6,7 +6,7 @@
 //! whether the read was a seek (a range that did not start at byte 0, or
 //! a playback that asked for a fresh link).
 
-use rusqlite::{Result, params};
+use rusqlite::{Connection, Result, params};
 
 use super::cache::{Cache, unix_seconds};
 
@@ -44,21 +44,7 @@ impl Cache {
         seek: bool,
         now: std::time::SystemTime,
     ) -> Result<()> {
-        if domain.is_empty() {
-            return Ok(());
-        }
-        let bytes = bytes.max(0);
-        self.conn()
-            .prepare_cached(
-                "INSERT INTO cloud_usage (domain, day, reads, bytes, seeks)
-                 VALUES (?, ?, 1, ?, ?)
-                 ON CONFLICT(domain, day) DO UPDATE SET
-                    reads = reads + 1,
-                    bytes = bytes + excluded.bytes,
-                    seeks = seeks + excluded.seeks",
-            )?
-            .execute(params![domain, day_of(now), bytes, i64::from(seek)])?;
-        Ok(())
+        record_read_on(&*self.conn(), domain, bytes, seek, now)
     }
 
     /// Usage rows for one day, ordered by domain.
@@ -79,6 +65,28 @@ impl Cache {
         })?
         .collect()
     }
+}
+
+pub(super) fn record_read_on(
+    conn: &Connection,
+    domain: &str,
+    bytes: i64,
+    seek: bool,
+    now: std::time::SystemTime,
+) -> Result<()> {
+    if domain.is_empty() {
+        return Ok(());
+    }
+    conn.prepare_cached(
+        "INSERT INTO cloud_usage (domain, day, reads, bytes, seeks)
+         VALUES (?, ?, 1, ?, ?)
+         ON CONFLICT(domain, day) DO UPDATE SET
+            reads = reads + 1,
+            bytes = bytes + excluded.bytes,
+            seeks = seeks + excluded.seeks",
+    )?
+    .execute(params![domain, day_of(now), bytes.max(0), i64::from(seek)])?;
+    Ok(())
 }
 
 /// `YYYY-MM-DD` from a unix timestamp shifted into the host's local time.

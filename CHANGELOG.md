@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- A successful resolve now stores the link, clears the failure and counts
+  the cloud read in one commit. A crash between the three writes could
+  leave a counted read without its link.
+- An upstream error returned by the daemon has the query string stripped
+  from any URL in it, so a signed link does not reach the caller.
 - Intro detection after a section scan visited every season in the
   library, not only the seasons of that section.
 - A scan's resolve and refresh were recorded as playback reads, so the

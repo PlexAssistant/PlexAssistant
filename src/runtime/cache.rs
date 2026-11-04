@@ -138,24 +138,33 @@ impl Cache {
         } else {
             entry.cached_at
         };
-        self.conn()
-            .prepare_cached(
-                "INSERT INTO links (target_url, direct_url, ua, expires_at, cached_at, last_used, hits, size)
-                 VALUES (?,?,?,?,?,?,0,?)
-                 ON CONFLICT(target_url) DO UPDATE SET
-                    direct_url=excluded.direct_url, ua=excluded.ua,
-                    expires_at=excluded.expires_at, last_used=excluded.last_used,
-                    size=excluded.size",
-            )?
-            .execute(params![
-                entry.target,
-                entry.direct,
-                entry.ua,
-                entry.expires_at,
-                cached_at,
-                ts,
-                entry.size,
-            ])?;
+        put_link_on(&self.conn(), entry, cached_at, ts)
+    }
+
+    /// Books a successful resolve: drops the failure row, counts the read,
+    /// and stores the link. The three writes commit together, so a crash
+    /// cannot leave a counted read without its link, or a link whose failure
+    /// row is still in force.
+    pub fn store_resolved(
+        &self,
+        entry: &Entry,
+        domain: &str,
+        bytes: i64,
+        seek: bool,
+        now_at: SystemTime,
+    ) -> Result<()> {
+        let ts = unix_seconds(now_at);
+        let cached_at = if entry.cached_at == 0 {
+            ts
+        } else {
+            entry.cached_at
+        };
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        super::ledger::clear_failure_on(&tx, &entry.target)?;
+        super::usage::record_read_on(&tx, domain, bytes, seek, now_at)?;
+        put_link_on(&tx, entry, cached_at, ts)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -170,6 +179,27 @@ impl Cache {
                 })
             })
     }
+}
+
+fn put_link_on(conn: &Connection, entry: &Entry, cached_at: i64, ts: i64) -> Result<()> {
+    conn.prepare_cached(
+        "INSERT INTO links (target_url, direct_url, ua, expires_at, cached_at, last_used, hits, size)
+         VALUES (?,?,?,?,?,?,0,?)
+         ON CONFLICT(target_url) DO UPDATE SET
+            direct_url=excluded.direct_url, ua=excluded.ua,
+            expires_at=excluded.expires_at, last_used=excluded.last_used,
+            size=excluded.size",
+    )?
+    .execute(params![
+        entry.target,
+        entry.direct,
+        entry.ua,
+        entry.expires_at,
+        cached_at,
+        ts,
+        entry.size,
+    ])?;
+    Ok(())
 }
 
 /// Adds `size` to a cache written before that column existed.
@@ -205,6 +235,34 @@ pub(super) mod tests {
         // a missing parent directory is created on open
         let cache = Cache::open(dir.path().join("assistant/cache.db")).unwrap();
         (dir, cache)
+    }
+
+    #[test]
+    fn a_resolved_link_clears_its_failure_and_counts_the_read() {
+        let (_dir, cache) = test_cache();
+        let target = "http://cdn.example/file/ep1";
+        cache
+            .record_failure(target, SystemTime::UNIX_EPOCH)
+            .unwrap();
+        cache
+            .store_resolved(
+                &Entry {
+                    target: target.into(),
+                    direct: "http://cdn.example/dl/ep1?t=1".into(),
+                    size: 40,
+                    ..Default::default()
+                },
+                "cdn.example",
+                40,
+                false,
+                SystemTime::UNIX_EPOCH,
+            )
+            .unwrap();
+        assert!(!cache.should_skip(target, SystemTime::UNIX_EPOCH).unwrap());
+        assert_eq!(cache.get(target).unwrap().unwrap().size, 40);
+        let usage = cache.usage_on("1970-01-01").unwrap();
+        assert_eq!(usage.len(), 1);
+        assert_eq!((usage[0].reads, usage[0].bytes), (1, 40));
     }
 
     #[test]
