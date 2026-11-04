@@ -19,12 +19,28 @@ pub enum ProbeError {
     Parse(#[from] serde_json::Error),
 }
 
+/// The entries analysis reads. A remote strm answers with the whole
+/// container header, and `-show_format -show_streams -show_chapters`
+/// returns every tag and side-data blob in it. These are the entries
+/// that reach a Plex row: the container and its brand, the stream fields
+/// `extra_data` is built from, and the chapter times. Anything else
+/// ffprobe can print is left out.
+const SHOW_ENTRIES: &str = "format=format_name,duration,size,bit_rate:\
+format_tags=major_brand:\
+stream=index,id,codec_name,codec_tag_string,profile,codec_type,width,height,\
+coded_width,coded_height,bit_rate,duration,channels,channel_layout,sample_rate,\
+avg_frame_rate,color_transfer,color_primaries,color_space,color_range,pix_fmt,\
+chroma_location,bits_per_raw_sample,level,refs,field_order,sample_aspect_ratio,\
+display_aspect_ratio:\
+stream_tags=language:stream_disposition:\
+chapter=start_time,end_time:chapter_tags=title";
+
 /// Bounded probe parameters: a probe size cap so a stray huge file
 /// cannot stall analysis, an explicit protocol whitelist for remote
 /// inputs, and a 50-second read-stall bound (microseconds, as ffprobe
 /// expects) so a wedged CDN connection fails here instead of hanging
 /// until the outer process timeout.
-fn probe_args<'a>(url: &'a str, ua: &'a str) -> [&'a str; 16] {
+fn probe_args<'a>(url: &'a str, ua: &'a str) -> [&'a str; 15] {
     [
         "-v",
         "error",
@@ -36,9 +52,8 @@ fn probe_args<'a>(url: &'a str, ua: &'a str) -> [&'a str; 16] {
         "file,http,https,tcp,tls,crypto,httpproxy",
         "-user_agent",
         ua,
-        "-show_format",
-        "-show_streams",
-        "-show_chapters",
+        "-show_entries",
+        SHOW_ENTRIES,
         "-of",
         "json",
         url,
@@ -60,10 +75,13 @@ pub async fn probe(ffprobe: &str, url: &str, ua: &str) -> Result<ProbeResult, Pr
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         let stderr = stderr.trim();
+        // ffprobe quotes the input URL when a remote open fails, and the
+        // query is the CDN signature. Strip it here so no caller can log
+        // or store it.
         return Err(ProbeError::Failed(if stderr.is_empty() {
             out.status.to_string()
         } else {
-            stderr.to_owned()
+            super::redact_urls(stderr)
         }));
     }
     parse_probe(&out.stdout)
@@ -295,6 +313,16 @@ pub(super) mod tests {
         let ffprobe = fake_ffprobe(&dir, "echo 'Server returned 404 Not Found' >&2\nexit 1");
         let err = probe(&ffprobe, "http://x/dl", "UA").await.unwrap_err();
         assert_eq!(err.to_string(), "ffprobe: Server returned 404 Not Found");
+
+        // a failed open quotes the signed input; the query must not survive
+        let signed = fake_ffprobe(
+            &dir,
+            "echo \"http://cdn.example/a.mkv?sign=abc: Server returned 403 Forbidden\" >&2\nexit 1",
+        );
+        let err = probe(&signed, "http://x/dl", "UA").await.unwrap_err();
+        let text = err.to_string();
+        assert!(!text.contains("sign=abc"), "{text}");
+        assert!(text.contains("Server returned 403 Forbidden"), "{text}");
 
         let silent = fake_ffprobe(&dir, "exit 3");
         let err = probe(&silent, "http://x/dl", "UA").await.unwrap_err();

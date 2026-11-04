@@ -9,6 +9,9 @@
   leave a counted read without its link.
 - An upstream error returned by the daemon has the query string stripped
   from any URL in it, so a signed link does not reach the caller.
+- A failed probe no longer carries the signed input URL. ffprobe quotes
+  it on stderr, and the query is stripped before the error leaves the
+  probe.
 - Intro detection after a section scan visited every season in the
   library, not only the seasons of that section.
 - A scan's resolve and refresh were recorded as playback reads, so the
@@ -16,6 +19,11 @@
 
 ### Changed
 
+- A scan probe asks ffprobe only for the entries that reach a Plex row:
+  the container and its brand, the stream fields `extra_data` is built
+  from, and the chapter times. The duration, size and codecs are
+  unchanged. On one 2160p episode the JSON went from 57064 bytes to
+  33164.
 - The preserved Plex binaries are named `.official` instead of `.real`.
   An existing install is renamed on the next boot.
 - A credits run probes the file once. The black-window detector used to
