@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Every label of an unlocked kind now moves in one pass. The lock the
+  pass writes after the first label gated the rest of the item, so an
+  item carrying several genres had only the first one translated.
 - The credits request now gives up on its own. A connection that never
   answered held the scan's item loop until the process was stopped.
 - A person's photo now moves with the name when the cast is rewritten.

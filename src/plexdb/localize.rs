@@ -90,16 +90,18 @@ impl Db {
     }
 
     /// Rewrites genre, mood and style labels that the table knows, and locks
-    /// each kind that changed. A locked kind is left as stored.
+    /// each kind that changed. A kind that arrived locked is left as stored;
+    /// the lock this pass writes does not gate the rest of the pass, so an
+    /// item carrying several labels of one kind has them all move together.
     pub fn localize_tags(&mut self, item_id: i64) -> Result<usize, super::WriteError> {
         self.write_known(|tx| {
             let user_fields = item_fields(tx, item_id)?;
             let links = tag_links(tx, item_id)?;
             let mut changed = 0;
-            let mut locks = user_fields;
+            let mut locks = user_fields.clone();
             for link in links {
                 let lock_id = lock_of(link.tag_type);
-                if localize::field_is_locked(&locks, lock_id) {
+                if localize::field_is_locked(&user_fields, lock_id) {
                     continue;
                 }
                 let Some(chinese) = localize::translate_tag(&link.tag) else {
@@ -554,6 +556,32 @@ mod tests {
         assert_eq!(english, "Action");
         // locked, so a second pass does not rewrite
         assert_eq!(db.localize_tags(1).unwrap(), 0);
+    }
+
+    #[test]
+    fn every_label_of_a_kind_moves_in_one_pass() {
+        let (_dir, mut db) = db();
+        db.conn
+            .execute_batch(
+                "INSERT INTO metadata_items (id, title) VALUES (1, 'show');
+                 INSERT INTO tags (id, tag, tag_type) VALUES
+                   (6, 'Action', 1), (7, 'Adventure', 1), (8, '剧情', 1);
+                 INSERT INTO taggings (metadata_item_id, tag_id, \"index\") VALUES
+                   (1, 6, 0), (1, 7, 1), (1, 8, 2);",
+            )
+            .unwrap();
+        // the lock the pass writes after Action must not skip Adventure
+        assert_eq!(db.localize_tags(1).unwrap(), 2);
+        let (fields, genre): (String, String) = db
+            .conn
+            .query_row(
+                "SELECT user_fields, tags_genre FROM metadata_items WHERE id=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(fields, "lockedFields=1");
+        assert_eq!(genre, "动作|冒险|剧情");
     }
 
     #[test]
