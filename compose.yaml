@@ -29,13 +29,11 @@ services:
       - PLEX_CLAIM=
       # credits detection: auto (default), heuristic (no model) or model
       # - ASSISTANT_CREDITS=auto
-      # Chinese sort titles, genre, mood and style labels, and cast names.
-      # Off unless set. sort, tags, people — write the ones named. people
-      # uses a built-in TMDB v3 key unless TMDB_API_KEY is set.
+      # Chinese sort titles, tags and cast names. Off unless named.
       # - ZH_LOCALIZE=sort,tags,people
+      # another TMDB v3 key; unset uses the built-in one
       # - TMDB_API_KEY=
-      # Drop those locks and leave what was written. Refresh metadata afterwards
-      # to pull the source values back.
+      # drop those locks; refresh metadata to restore
       # - ZH_LOCALIZE_UNLOCK=1
     volumes:
       # Plex data: database, metadata, the assistant cache — back this up

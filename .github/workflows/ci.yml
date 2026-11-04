@@ -1,11 +1,7 @@
 name: CI
 
-# Tag-driven only: pushing a v* tag runs the gates and publishes the
-# multi-arch image to ghcr as both the tag and latest. Nothing runs on
-# ordinary pushes or PRs.
-#
-# Runners are pinned (not ubuntu-latest) so image migrations can't
-# shift the build environment under a release.
+# Runners are pinned (not ubuntu-latest) so a release does not move
+# with the image.
 on:
   push:
     tags: ['v*']
@@ -22,7 +18,14 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      # the tag and Cargo.toml must agree before anything is published
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  version:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
       - name: tag matches Cargo.toml version
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -31,17 +34,11 @@ jobs:
             echo "tag v$tag does not match Cargo.toml version $cargo_version" >&2
             exit 1
           }
-      - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
 
-  # Each arch builds natively on its own runner (the arm64 runners are
-  # free for public repos): compiling under QEMU emulation was the
-  # single biggest cost of a release, at an hour or more per tag.
-  # Each job pushes an untagged digest; the manifest job stitches
-  # them into the published multi-arch tags.
+  # Native per arch. QEMU was the slow part of a release.
+  # Untagged digests; manifest publishes the tags.
   image-amd64:
-    needs: test
+    needs: [test, version]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -71,7 +68,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=amd64
 
   image-arm64:
-    needs: test
+    needs: [test, version]
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
