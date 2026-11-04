@@ -150,6 +150,12 @@ pub const LOCK_ACTOR: i64 = 19;
 /// The lock ids the cast rewrite owns.
 pub const PEOPLE_LOCKS: [i64; 3] = [LOCK_DIRECTOR, LOCK_WRITER, LOCK_ACTOR];
 
+/// Whether `id` is in the `lockedFields` list of `user_fields`. The list
+/// continues after the `lockedFields=` piece, so an id anywhere in it counts.
+pub fn field_is_locked(user_fields: &str, id: i64) -> bool {
+    split_locks(user_fields).0.contains(&id)
+}
+
 /// `user_fields` with `id` added to the `lockedFields` list. Other keys in
 /// the column are kept. Adding an id that is already there changes nothing.
 pub fn lock_field(user_fields: &str, id: i64) -> String {
@@ -267,6 +273,18 @@ mod tests {
         assert_eq!(translate_tag("Action"), Some("动作"));
         assert_eq!(translate_tag("Sad"), Some("悲伤"));
         assert_eq!(translate_tag("剧情"), None);
+    }
+
+    #[test]
+    fn a_lock_anywhere_in_the_list_is_found() {
+        assert!(field_is_locked("lockedFields=1", 1));
+        assert!(field_is_locked("lockedFields=1|2", 1));
+        assert!(field_is_locked("lockedFields=1|2", 2));
+        assert!(field_is_locked("lockedFields=2|pv:x=1", 2));
+        assert!(field_is_locked("pv:x=1|lockedFields=1|2|17", 17));
+        assert!(!field_is_locked("lockedFields=1|2", 17));
+        assert!(!field_is_locked("pv:x=1", 1));
+        assert!(!field_is_locked("", 1));
     }
 
     #[test]

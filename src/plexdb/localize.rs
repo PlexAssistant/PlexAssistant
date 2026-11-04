@@ -51,7 +51,7 @@ impl Db {
     pub fn localize_sort(&mut self, item_id: i64) -> Result<bool, super::WriteError> {
         self.write_known(|tx| {
             let (title, title_sort, user_fields) = item_title(tx, item_id)?;
-            if field_locked(&user_fields, LOCK_TITLE_SORT) {
+            if localize::field_is_locked(&user_fields, LOCK_TITLE_SORT) {
                 return Ok(false);
             }
             let Some(sort) = localize::sort_title(&title) else {
@@ -97,7 +97,7 @@ impl Db {
             let mut locks = user_fields;
             for link in links {
                 let lock_id = lock_of(link.tag_type);
-                if field_locked(&locks, lock_id) {
+                if localize::field_is_locked(&locks, lock_id) {
                     continue;
                 }
                 let Some(chinese) = localize::translate_tag(&link.tag) else {
@@ -160,7 +160,7 @@ impl Db {
                 (TAG_WRITER, LOCK_WRITER, &credits.writers),
                 (TAG_ACTOR, LOCK_ACTOR, &credits.cast),
             ] {
-                if field_locked(&locks, lock_id) {
+                if localize::field_is_locked(&locks, lock_id) {
                     continue;
                 }
                 if retag_people(tx, item_id, tag_type, list)? == 0 {
@@ -392,15 +392,6 @@ fn lock_of(tag_type: i64) -> i64 {
     }
 }
 
-fn field_locked(user_fields: &str, id: i64) -> bool {
-    user_fields.split('|').any(|part| {
-        let Some(list) = part.strip_prefix("lockedFields=") else {
-            return false;
-        };
-        list.split('|').any(|s| s.parse::<i64>().ok() == Some(id))
-    })
-}
-
 fn item_title(
     tx: &rusqlite::Transaction,
     item_id: i64,
@@ -546,6 +537,24 @@ mod tests {
     }
 
     #[test]
+    fn a_tag_lock_behind_another_id_is_respected() {
+        let (_dir, mut db) = db();
+        db.conn
+            .execute_batch(
+                "INSERT INTO metadata_items (id, user_fields) VALUES (1, 'lockedFields=2|1');
+                 INSERT INTO tags (id, tag, tag_type) VALUES (6, 'Action', 1);
+                 INSERT INTO taggings (metadata_item_id, tag_id, \"index\") VALUES (1, 6, 0);",
+            )
+            .unwrap();
+        assert_eq!(db.localize_tags(1).unwrap(), 0);
+        let tag: String = db
+            .conn
+            .query_row("SELECT tag FROM tags WHERE id=6", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(tag, "Action");
+    }
+
+    #[test]
     fn unlock_drops_the_lock_and_keeps_the_label() {
         let (_dir, mut db) = db();
         db.conn
@@ -613,6 +622,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(sort, "KEEP");
+    }
+
+    #[test]
+    fn a_sort_lock_behind_another_id_is_respected() {
+        let (_dir, mut db) = db();
+        // genre (1) was locked first, so the sort lock (2) is not the piece
+        // that carries the lockedFields= prefix
+        db.conn
+            .execute(
+                "INSERT INTO metadata_items (id, title, title_sort, user_fields)
+                 VALUES (1, '重庆森林', 'MY OWN', 'lockedFields=1|2')",
+                [],
+            )
+            .unwrap();
+        assert!(!db.localize_sort(1).unwrap());
+        let sort: String = db
+            .conn
+            .query_row(
+                "SELECT title_sort FROM metadata_items WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(sort, "MY OWN");
     }
 
     #[test]
@@ -772,6 +805,29 @@ mod tests {
             )
             .unwrap();
         assert_eq!(star, "Ada Actor");
+    }
+
+    #[test]
+    fn a_people_lock_behind_another_id_is_respected() {
+        let (_dir, mut db) = db();
+        // director (17) was locked first, so the actor lock (19) is a bare id
+        db.conn
+            .execute_batch(
+                "INSERT INTO metadata_items (id, user_fields) VALUES (1, 'lockedFields=17|19');
+                 INSERT INTO tags (id, tag, tag_type) VALUES (6, 'Ada Actor', 6);
+                 INSERT INTO taggings (metadata_item_id, tag_id) VALUES (1, 6);",
+            )
+            .unwrap();
+        let credits = crate::localize::Credits {
+            cast: vec![credit("甲演员", "Ada Actor")],
+            ..Default::default()
+        };
+        assert_eq!(db.localize_people(1, &credits).unwrap(), 0);
+        let tag: String = db
+            .conn
+            .query_row("SELECT tag FROM tags WHERE id=6", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(tag, "Ada Actor");
     }
 
     #[test]
