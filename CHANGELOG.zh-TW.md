@@ -1,6 +1,6 @@
 # 變更日誌
 
-## [未發布]
+## [0.5.0] — 2026-11-04
 
 ### 修復
 
@@ -213,6 +213,7 @@
   SQLite 直寫、持久連結快取、雲端硬碟保護(熔斷器、台帳、
   配額)、install/verify/revert 生命週期。
 
+[0.5.0]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/PlexAssistant/PlexAssistant/compare/v0.4.2...v0.4.3
