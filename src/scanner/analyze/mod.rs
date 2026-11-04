@@ -12,9 +12,10 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use crate::linkres::{self, Link};
-use crate::localize::Localize;
 use crate::plexdb::{Db, Part, WriteError, WriteSpec};
 use crate::runtime::{Cache, Identity, PartFailure};
+use plex_localize::Localize;
+use plex_localize::pass::Pass;
 
 use super::probe::ProbeResult;
 use super::spec::build_spec;
@@ -33,10 +34,14 @@ pub struct Options {
     /// assistant cache; None falls back to `ASSISTANT_CACHE`, then the
     /// default path inside the container
     pub cache: Option<PathBuf>,
-    /// Chinese sort titles, tag labels and cast names. Off rewrites nothing.
+    /// Sort titles, tag labels and cast names, and the language. Off
+    /// rewrites nothing.
     pub localize: Localize,
     /// Drop the locks this pass wrote instead of writing.
     pub localize_unlock: bool,
+    /// The library database the localize pass opens on its own; the
+    /// default is the scanner's path inside the container.
+    pub localize_db: Option<PathBuf>,
 }
 
 impl Options {
@@ -229,64 +234,32 @@ pub fn write_item(
 }
 
 /// Rewrites the sort title, tag labels and cast names `opts.localize` names,
-/// or drops those locks when `opts.localize_unlock` is set. A failure is
-/// logged and does not fail the scan: the media rows are already written.
-/// Cast names use `TMDB_API_KEY` when it is set, and the built-in key otherwise.
+/// or drops those locks when `opts.localize_unlock` is set. The work runs on
+/// the plex-localize pass: the library database says what is there, and the
+/// titles, labels, directors and writers go through the Plex api, so Plex
+/// keeps its own full-text tables honest. A failure is logged and does not
+/// fail the scan: the media rows are already written.
 pub async fn localize_item(db: &mut Db, item_id: i64, opts: &Options) {
-    if opts.localize_unlock {
-        match (
-            db.unlock_sort(item_id),
-            db.unlock_tags(item_id),
-            db.unlock_people(item_id),
-        ) {
-            (Ok(sort), Ok(tags), Ok(people)) if sort || tags || people => {
-                println!("item {item_id}: unlocked")
-            }
-            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
-                println!("item {item_id}: localize: {e}")
-            }
-            _ => {}
-        }
+    let _ = db;
+    if !opts.localize_unlock && !(opts.localize.sort || opts.localize.tags || opts.localize.people)
+    {
         return;
     }
-    if opts.localize.sort {
-        match db.localize_sort(item_id) {
-            Ok(true) => println!("item {item_id}: sort"),
-            Ok(false) => {}
-            Err(e) => println!("item {item_id}: localize: {e}"),
-        }
-    }
-    if opts.localize.tags {
-        match db.localize_tags(item_id) {
-            Ok(n) if n > 0 => println!("item {item_id}: tags"),
-            Ok(_) => {}
-            Err(e) => println!("item {item_id}: localize: {e}"),
-        }
-    }
-    if opts.localize.people {
-        localize_people(db, item_id).await;
-    }
-}
-
-/// Rewrites the cast of one item from its credits. No TMDB id, or a request
-/// that does not come back, leaves the names as stored.
-async fn localize_people(db: &mut Db, item_id: i64) {
-    let key = crate::localize::tmdb_key_from_env();
-    let target = match db.credit_target(item_id) {
-        Ok(Some(target)) => target,
-        Ok(None) => return,
+    let path = opts
+        .localize_db
+        .clone()
+        .unwrap_or_else(|| plex_localize::db::DEFAULT_PATH.into());
+    let mut pass = match Pass::from_env(&path.to_string_lossy()) {
+        Ok(pass) => pass,
         Err(e) => {
             println!("item {item_id}: localize: {e}");
             return;
         }
     };
-    let Some(credits) = crate::localize::fetch_credits(&key, target).await else {
-        println!("item {item_id}: people: skipped");
-        return;
-    };
-    match db.localize_people(item_id, &credits) {
-        Ok(n) if n > 0 => println!("item {item_id}: people"),
-        Ok(_) => {}
-        Err(e) => println!("item {item_id}: localize: {e}"),
+    pass.what = opts.localize;
+    if opts.localize_unlock {
+        pass.unlock(item_id).await;
+    } else {
+        pass.item(item_id).await;
     }
 }

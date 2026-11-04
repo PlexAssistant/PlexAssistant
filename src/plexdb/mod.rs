@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use rusqlite::{Connection, Result};
 
-mod localize;
 mod markers;
 #[cfg(test)]
 pub(crate) mod test_schema;

@@ -42,8 +42,9 @@ pub async fn run(args: Args) -> CliResult {
         user_agent: flags.ua,
         runtime_sock: Some(flags.runtime_sock).filter(|s| !s.as_os_str().is_empty()),
         cache: Some(runtime::cache_path()),
-        localize: crate::localize::Localize::from_env(),
-        localize_unlock: crate::localize::unlock_from_env(),
+        localize: plex_localize::Localize::from_env(),
+        localize_unlock: plex_localize::unlock_from_env(),
+        localize_db: Some(flags.library_db.clone()),
     };
     let mut db = Db::open(&flags.library_db)?;
     if flags.item > 0 {
