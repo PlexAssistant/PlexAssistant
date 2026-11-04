@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- The localize pass speaks nine languages, the PlexEditions `locales` list:
+  `LOCALIZE_LANG` names one (`zh-Hans` by default; `zh-Hant`, `en`, `ja`,
+  `ko`, `ar`, `fr`, `ru`, `es` too). Tag labels come from the language's
+  table, cast names are asked for in the language, and a pinyin sort title
+  is written for either Chinese. A traditional title now reads through
+  OpenCC's traditional-to-simplified map, so `重慶森林` sorts as `CQSL` and
+  not with the `重` of `zhòng`.
+
+### Changed
+
+- The localize pass is now the plex-localize crate, which keeps shipping as
+  the standalone PlexLocalize repo. `LOCALIZE=sort,tags,people` replaces
+  `ZH_LOCALIZE`, and `LOCALIZE_UNLOCK` replaces `ZH_LOCALIZE_UNLOCK`; the
+  old names still work and mean Chinese.
+
 ## [0.6.0] — 2026-11-04
 
 ### Added
