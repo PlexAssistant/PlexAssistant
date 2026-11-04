@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use crate::linkres::{self, Link};
+use crate::localize::Localize;
 use crate::plexdb::{Db, Part, WriteError, WriteSpec};
 use crate::runtime::{Cache, Identity, PartFailure};
 
@@ -32,6 +33,10 @@ pub struct Options {
     /// assistant cache; None falls back to `ASSISTANT_CACHE`, then the
     /// default path inside the container
     pub cache: Option<PathBuf>,
+    /// Chinese tag labels. Off rewrites nothing.
+    pub localize: Localize,
+    /// Drop the tag locks instead of writing labels.
+    pub localize_unlock: bool,
 }
 
 impl Options {
@@ -79,7 +84,9 @@ pub async fn analyze_item(
 ) -> Result<usize, AnalyzeError> {
     let parts = db.parts_by_item(item_id)?;
     let probed = probe_item(parts, item_id, opts, refreshed).await;
-    write_item(db, item_id, probed, opts)
+    let written = write_item(db, item_id, probed, opts)?;
+    localize_item(db, item_id, opts);
+    Ok(written)
 }
 
 /// One part whose probe succeeded and is ready to be written.
@@ -219,4 +226,24 @@ pub fn write_item(
         }
     }
     Ok(probed.len())
+}
+
+/// Rewrites genre, mood and style labels when `opts.localize` asks, or drops
+/// their locks when `opts.localize_unlock` is set. A failure is logged and
+/// does not fail the scan: the media rows are already written.
+pub fn localize_item(db: &mut Db, item_id: i64, opts: &Options) {
+    if !opts.localize.tags && !opts.localize_unlock {
+        return;
+    }
+    let result = if opts.localize_unlock {
+        db.unlock_tags(item_id).map(|dropped| dropped.then_some("unlocked"))
+    } else {
+        db.localize_tags(item_id)
+            .map(|n| (n > 0).then_some("tags"))
+    };
+    match result {
+        Ok(Some(what)) => println!("item {item_id}: {what}"),
+        Ok(None) => {}
+        Err(e) => println!("item {item_id}: localize: {e}"),
+    }
 }

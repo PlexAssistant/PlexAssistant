@@ -45,6 +45,7 @@ pub(super) async fn run_credits(file: &OsStr) -> CliResult {
         user_agent: DEFAULT_UA.into(),
         runtime_sock: Some(env_or("ASSISTANT_SOCK", DEFAULT_SOCK).into()),
         cache: Some(runtime::cache_path()),
+        ..Default::default()
     };
 
     let mut db = Db::open(plexdb::DEFAULT_PATH)?;

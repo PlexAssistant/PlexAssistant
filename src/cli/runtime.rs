@@ -104,6 +104,7 @@ async fn fill_item(
         user_agent: ua.to_owned(),
         runtime_sock: Some(sock.to_owned()).filter(|p| !p.as_os_str().is_empty()),
         cache: Some(cache.to_owned()),
+        ..Default::default()
     };
     let n = crate::scanner::analyze_item(&mut db, item, &opts, &Default::default()).await?;
     if n > 0 {
