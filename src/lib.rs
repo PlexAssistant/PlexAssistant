@@ -8,9 +8,10 @@
 //!
 //! - [`scanner`] answers a scan: it resolves each `.strm` target, probes the
 //!   direct link with ffprobe, and writes the media rows through [`plexdb`].
-//!   It also detects intro and credits markers. [`localize`] rewrites sort
-//!   titles, genre, mood and style labels, and cast names when `ZH_LOCALIZE`
-//!   asks for it.
+//!   It also detects intro and credits markers. `plex-localize` (also shipped
+//!   as the standalone PlexLocalize crate) rewrites sort titles, genre, mood
+//!   and style labels, and cast names when `LOCALIZE` asks for it, in the
+//!   language `LOCALIZE_LANG` names.
 //! - [`transcoder`] answers playback: it swaps a `.strm` input for a direct
 //!   link, then runs the original transcoder.
 //! - [`runtime`] is the resident daemon both of them ask for links. It keeps
@@ -29,7 +30,6 @@
 pub mod cli;
 pub mod install;
 pub mod linkres;
-pub mod localize;
 pub mod plexdb;
 pub mod runtime;
 pub mod scanner;

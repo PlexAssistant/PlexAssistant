@@ -12,9 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use crate::linkres::{self, Link};
-use crate::localize::Localize;
 use crate::plexdb::{Db, Part, WriteError, WriteSpec};
 use crate::runtime::{Cache, Identity, PartFailure};
+use plex_localize::{Lang, Localize};
 
 use super::probe::ProbeResult;
 use super::spec::build_spec;
@@ -233,6 +233,7 @@ pub fn write_item(
 /// logged and does not fail the scan: the media rows are already written.
 /// Cast names use `TMDB_API_KEY` when it is set, and the built-in key otherwise.
 pub async fn localize_item(db: &mut Db, item_id: i64, opts: &Options) {
+    let lang = opts.localize.lang;
     if opts.localize_unlock {
         match (
             db.unlock_sort(item_id),
@@ -250,28 +251,28 @@ pub async fn localize_item(db: &mut Db, item_id: i64, opts: &Options) {
         return;
     }
     if opts.localize.sort {
-        match db.localize_sort(item_id) {
+        match db.localize_sort(item_id, lang) {
             Ok(true) => println!("item {item_id}: sort"),
             Ok(false) => {}
             Err(e) => println!("item {item_id}: localize: {e}"),
         }
     }
     if opts.localize.tags {
-        match db.localize_tags(item_id) {
+        match db.localize_tags(item_id, lang) {
             Ok(n) if n > 0 => println!("item {item_id}: tags"),
             Ok(_) => {}
             Err(e) => println!("item {item_id}: localize: {e}"),
         }
     }
     if opts.localize.people {
-        localize_people(db, item_id).await;
+        localize_people(db, item_id, lang).await;
     }
 }
 
 /// Rewrites the cast of one item from its credits. No TMDB id, or a request
 /// that does not come back, leaves the names as stored.
-async fn localize_people(db: &mut Db, item_id: i64) {
-    let key = crate::localize::tmdb_key_from_env();
+async fn localize_people(db: &mut Db, item_id: i64, lang: Lang) {
+    let key = plex_localize::tmdb_key_from_env();
     let target = match db.credit_target(item_id) {
         Ok(Some(target)) => target,
         Ok(None) => return,
@@ -280,7 +281,7 @@ async fn localize_people(db: &mut Db, item_id: i64) {
             return;
         }
     };
-    let Some(credits) = crate::localize::fetch_credits(&key, target).await else {
+    let Some(credits) = plex_localize::fetch_credits(&key, target, lang).await else {
         println!("item {item_id}: people: skipped");
         return;
     };

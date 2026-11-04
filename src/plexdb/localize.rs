@@ -7,12 +7,13 @@
 //! lock. Unlocking removes those ids and leaves the labels; a later metadata
 //! refresh is what puts the source values back.
 
+use plex_localize::{self as localize, Lang};
 use rusqlite::params;
 
 use super::Db;
-use crate::localize::{
-    self, Credit, CreditTarget, Credits, LOCK_ACTOR, LOCK_DIRECTOR, LOCK_GENRE, LOCK_MOOD,
-    LOCK_STYLE, LOCK_TITLE_SORT, LOCK_WRITER,
+use plex_localize::{
+    Credit, CreditTarget, Credits, LOCK_ACTOR, LOCK_DIRECTOR, LOCK_GENRE, LOCK_MOOD, LOCK_STYLE,
+    LOCK_TITLE_SORT, LOCK_WRITER,
 };
 
 /// Plex tag types. Genre is what a film or show carries. Mood and style are
@@ -49,14 +50,14 @@ struct TagLink {
 impl Db {
     /// Writes the sort title from the stored display title, and locks it.
     /// A locked sort title is left as stored. A title with nothing to sort
-    /// is left as stored. Returns whether the sort title changed.
-    pub fn localize_sort(&mut self, item_id: i64) -> Result<bool, super::WriteError> {
+    /// in `lang` is left as stored. Returns whether the sort title changed.
+    pub fn localize_sort(&mut self, item_id: i64, lang: Lang) -> Result<bool, super::WriteError> {
         self.write_known(|tx| {
             let (title, title_sort, user_fields) = item_title(tx, item_id)?;
             if localize::field_is_locked(&user_fields, LOCK_TITLE_SORT) {
                 return Ok(false);
             }
-            let Some(sort) = localize::sort_title(&title) else {
+            let Some(sort) = localize::sort_title(&title, lang) else {
                 return Ok(false);
             };
             if title_sort.as_deref() == Some(sort.as_str()) {
@@ -89,11 +90,12 @@ impl Db {
         })
     }
 
-    /// Rewrites genre, mood and style labels that the table knows, and locks
-    /// each kind that changed. A kind that arrived locked is left as stored;
-    /// the lock this pass writes does not gate the rest of the pass, so an
-    /// item carrying several labels of one kind has them all move together.
-    pub fn localize_tags(&mut self, item_id: i64) -> Result<usize, super::WriteError> {
+    /// Rewrites genre, mood and style labels that `lang`'s table knows, and
+    /// locks each kind that changed. A kind that arrived locked is left as
+    /// stored; the lock this pass writes does not gate the rest of the pass,
+    /// so an item carrying several labels of one kind has them all move
+    /// together.
+    pub fn localize_tags(&mut self, item_id: i64, lang: Lang) -> Result<usize, super::WriteError> {
         self.write_known(|tx| {
             let user_fields = item_fields(tx, item_id)?;
             let links = tag_links(tx, item_id)?;
@@ -104,13 +106,13 @@ impl Db {
                 if localize::field_is_locked(&user_fields, lock_id) {
                     continue;
                 }
-                let Some(chinese) = localize::translate_tag(&link.tag) else {
+                let Some(label) = localize::translate_tag(&link.tag, lang) else {
                     continue;
                 };
-                if chinese == link.tag {
+                if label == link.tag {
                     continue;
                 }
-                let new_id = find_or_insert_tag(tx, link.tag_type, chinese, None)?;
+                let new_id = find_or_insert_tag(tx, link.tag_type, label, None)?;
                 tx.execute(
                     "UPDATE taggings SET tag_id=? WHERE id=?",
                     params![new_id, link.tagging_id],
@@ -500,6 +502,7 @@ fn denormalized_tags(
 
 #[cfg(test)]
 mod tests {
+    use super::Lang;
     use crate::plexdb::Db;
 
     const SCHEMA: &str = r#"
@@ -535,7 +538,7 @@ mod tests {
                  INSERT INTO taggings (metadata_item_id, tag_id, \"index\") VALUES (1, 6, 0);",
             )
             .unwrap();
-        assert_eq!(db.localize_tags(1).unwrap(), 1);
+        assert_eq!(db.localize_tags(1, Lang::ZhHans).unwrap(), 1);
         let (tag, fields, genre): (String, String, String) = db
             .conn
             .query_row(
@@ -558,7 +561,7 @@ mod tests {
             .unwrap();
         assert_eq!(english, "Action");
         // locked, so a second pass does not rewrite
-        assert_eq!(db.localize_tags(1).unwrap(), 0);
+        assert_eq!(db.localize_tags(1, Lang::ZhHans).unwrap(), 0);
     }
 
     #[test]
@@ -574,7 +577,7 @@ mod tests {
             )
             .unwrap();
         // the lock the pass writes after Action must not skip Adventure
-        assert_eq!(db.localize_tags(1).unwrap(), 2);
+        assert_eq!(db.localize_tags(1, Lang::ZhHans).unwrap(), 2);
         let (fields, genre): (String, String) = db
             .conn
             .query_row(
@@ -597,7 +600,7 @@ mod tests {
                  INSERT INTO taggings (metadata_item_id, tag_id, \"index\") VALUES (1, 6, 0);",
             )
             .unwrap();
-        assert_eq!(db.localize_tags(1).unwrap(), 0);
+        assert_eq!(db.localize_tags(1, Lang::ZhHans).unwrap(), 0);
         let tag: String = db
             .conn
             .query_row("SELECT tag FROM tags WHERE id=6", [], |row| row.get(0))
@@ -638,7 +641,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        assert!(db.localize_sort(1).unwrap());
+        assert!(db.localize_sort(1, Lang::ZhHans).unwrap());
         let (title, sort, fields): (String, String, String) = db
             .conn
             .query_row(
@@ -650,7 +653,7 @@ mod tests {
         assert_eq!(title, "重庆森林");
         assert_eq!(sort, "CQSL");
         assert_eq!(fields, "lockedFields=2");
-        assert!(!db.localize_sort(1).unwrap());
+        assert!(!db.localize_sort(1, Lang::ZhHans).unwrap());
     }
 
     #[test]
@@ -663,7 +666,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        assert!(!db.localize_sort(1).unwrap());
+        assert!(!db.localize_sort(1, Lang::ZhHans).unwrap());
         let sort: String = db
             .conn
             .query_row(
@@ -687,7 +690,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        assert!(!db.localize_sort(1).unwrap());
+        assert!(!db.localize_sort(1, Lang::ZhHans).unwrap());
         let sort: String = db
             .conn
             .query_row(
@@ -723,8 +726,8 @@ mod tests {
         assert!(!db.unlock_sort(1).unwrap());
     }
 
-    fn credit(name: &str, original: &str) -> crate::localize::Credit {
-        crate::localize::Credit {
+    fn credit(name: &str, original: &str) -> plex_localize::Credit {
+        plex_localize::Credit {
             name: name.into(),
             original: original.into(),
         }
@@ -746,7 +749,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             db.credit_target(12).unwrap(),
-            Some(crate::localize::CreditTarget::Episode {
+            Some(plex_localize::CreditTarget::Episode {
                 id: 42,
                 season: 2,
                 episode: 4,
@@ -767,7 +770,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             db.credit_target(1).unwrap(),
-            Some(crate::localize::CreditTarget::Movie(7))
+            Some(plex_localize::CreditTarget::Movie(7))
         );
     }
 
@@ -783,7 +786,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             db.credit_target(10).unwrap(),
-            Some(crate::localize::CreditTarget::Show(42))
+            Some(plex_localize::CreditTarget::Show(42))
         );
     }
 
@@ -799,7 +802,7 @@ mod tests {
                    (1, 1, 4, 0, '导演'), (2, 1, 5, 0, '编剧'), (3, 1, 6, 0, 'Lead');",
             )
             .unwrap();
-        let credits = crate::localize::Credits {
+        let credits = plex_localize::Credits {
             directors: vec![credit("甲导演", "Ada Director")],
             writers: vec![credit("甲编剧", "Ada Writer")],
             cast: vec![credit("甲演员", "Ada Actor")],
@@ -842,7 +845,7 @@ mod tests {
                  INSERT INTO taggings (metadata_item_id, tag_id) VALUES (1, 6);",
             )
             .unwrap();
-        let credits = crate::localize::Credits {
+        let credits = plex_localize::Credits {
             cast: vec![credit("甲演员", "Ada Actor")],
             ..Default::default()
         };
@@ -872,7 +875,7 @@ mod tests {
                    (1, 4, 0), (1, 5, 1);",
             )
             .unwrap();
-        let credits = crate::localize::Credits {
+        let credits = plex_localize::Credits {
             directors: vec![credit("甲导演", "Ada Director")],
             writers: vec![credit("甲编剧", "Ada Writer")],
             ..Default::default()
@@ -917,7 +920,7 @@ mod tests {
                  INSERT INTO taggings (metadata_item_id, tag_id) VALUES (1, 6);",
             )
             .unwrap();
-        let credits = crate::localize::Credits {
+        let credits = plex_localize::Credits {
             cast: vec![credit("甲演员", "Ada Actor")],
             ..Default::default()
         };

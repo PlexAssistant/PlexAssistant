@@ -1347,8 +1347,8 @@ dependencies = [
  "futures-util",
  "hmac",
  "libc",
- "pinyin_pro",
  "plex-editions",
+ "plex-localize",
  "quick-xml",
  "reqwest",
  "rusqlite",
@@ -1381,6 +1381,16 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "plex-localize"
+version = "0.1.0"
+dependencies = [
+ "pinyin_pro",
+ "reqwest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
