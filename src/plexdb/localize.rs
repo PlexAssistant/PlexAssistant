@@ -42,6 +42,8 @@ struct TagLink {
     tagging_id: i64,
     tag_type: i64,
     tag: String,
+    /// The photo on the person's row. Genre, mood and style rows carry none.
+    thumb: Option<String>,
 }
 
 impl Db {
@@ -106,7 +108,7 @@ impl Db {
                 if chinese == link.tag {
                     continue;
                 }
-                let new_id = find_or_insert_tag(tx, link.tag_type, chinese)?;
+                let new_id = find_or_insert_tag(tx, link.tag_type, chinese, None)?;
                 tx.execute(
                     "UPDATE taggings SET tag_id=? WHERE id=?",
                     params![new_id, link.tagging_id],
@@ -334,7 +336,8 @@ fn tmdb_id(conn: &rusqlite::Connection, item_id: i64) -> Result<Option<u64>, rus
 }
 
 /// Points each person whose stored name is still the original at the Chinese
-/// name. The role in `taggings.text` stays. Returns how many names moved.
+/// name. The role in `taggings.text` stays, and the photo on the row moves
+/// with the name. Returns how many names moved.
 fn retag_people(
     tx: &rusqlite::Transaction,
     item_id: i64,
@@ -353,7 +356,7 @@ fn retag_people(
         if credit.name == link.tag {
             continue;
         }
-        let new_id = find_or_insert_tag(tx, tag_type, &credit.name)?;
+        let new_id = find_or_insert_tag(tx, tag_type, &credit.name, link.thumb.as_deref())?;
         tx.execute(
             "UPDATE taggings SET tag_id=? WHERE id=?",
             params![new_id, link.tagging_id],
@@ -369,7 +372,7 @@ fn people_links(
     tag_type: i64,
 ) -> Result<Vec<TagLink>, rusqlite::Error> {
     let mut stmt = tx.prepare(
-        "SELECT tg.id, t.tag_type, t.tag
+        "SELECT tg.id, t.tag_type, t.tag, t.user_thumb_url
          FROM taggings tg JOIN tags t ON t.id = tg.tag_id
          WHERE tg.metadata_item_id=? AND t.tag_type=?
          ORDER BY tg.\"index\"",
@@ -379,6 +382,7 @@ fn people_links(
             tagging_id: row.get(0)?,
             tag_type: row.get(1)?,
             tag: row.get(2)?,
+            thumb: row.get(3)?,
         })
     })?;
     rows.collect()
@@ -414,7 +418,7 @@ fn item_fields(tx: &rusqlite::Transaction, item_id: i64) -> Result<String, rusql
 
 fn tag_links(tx: &rusqlite::Transaction, item_id: i64) -> Result<Vec<TagLink>, rusqlite::Error> {
     let mut stmt = tx.prepare(
-        "SELECT tg.id, t.tag_type, t.tag
+        "SELECT tg.id, t.tag_type, t.tag, t.user_thumb_url
          FROM taggings tg JOIN tags t ON t.id = tg.tag_id
          WHERE tg.metadata_item_id=? AND t.tag_type IN (1, 300, 301)
          ORDER BY tg.\"index\"",
@@ -424,28 +428,43 @@ fn tag_links(tx: &rusqlite::Transaction, item_id: i64) -> Result<Vec<TagLink>, r
             tagging_id: row.get(0)?,
             tag_type: row.get(1)?,
             tag: row.get(2)?,
+            thumb: row.get(3)?,
         })
     })?;
     rows.collect()
 }
 
+/// The id of the tag row for `tag`, creating it when the library has none.
+/// A people row is created carrying `thumb`, and a row that already exists
+/// without one is filled in, so the photo stays with the name.
 fn find_or_insert_tag(
     tx: &rusqlite::Transaction,
     tag_type: i64,
     tag: &str,
+    thumb: Option<&str>,
 ) -> Result<i64, rusqlite::Error> {
     let existing = tx.query_row(
-        "SELECT id FROM tags WHERE tag_type=? AND tag=? AND metadata_item_id IS NULL LIMIT 1",
+        "SELECT id, user_thumb_url FROM tags
+         WHERE tag_type=? AND tag=? AND metadata_item_id IS NULL LIMIT 1",
         params![tag_type, tag],
-        |row| row.get(0),
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
     );
     match existing {
-        Ok(id) => Ok(id),
+        Ok((id, have)) => {
+            let missing = matches!(have.as_deref(), None | Some(""));
+            if let (Some(new), true) = (thumb, missing) {
+                tx.execute(
+                    "UPDATE tags SET user_thumb_url=? WHERE id=?",
+                    params![new, id],
+                )?;
+            }
+            Ok(id)
+        }
         Err(rusqlite::Error::QueryReturnedNoRows) => {
             tx.execute(
-                "INSERT INTO tags (tag, tag_type, created_at, updated_at)
-                 VALUES (?, ?, strftime('%s','now'), strftime('%s','now'))",
-                params![tag, tag_type],
+                "INSERT INTO tags (tag, tag_type, user_thumb_url, created_at, updated_at)
+                 VALUES (?, ?, ?, strftime('%s','now'), strftime('%s','now'))",
+                params![tag, tag_type, thumb],
             )?;
             Ok(tx.last_insert_rowid())
         }
@@ -487,7 +506,8 @@ mod tests {
           tags_genre TEXT, tags_director TEXT, tags_writer TEXT, tags_star TEXT);
         CREATE TABLE tags (
           id INTEGER PRIMARY KEY AUTOINCREMENT, metadata_item_id INTEGER,
-          tag TEXT, tag_type INTEGER, created_at INTEGER, updated_at INTEGER);
+          tag TEXT, tag_type INTEGER, user_thumb_url TEXT,
+          created_at INTEGER, updated_at INTEGER);
         CREATE TABLE taggings (
           id INTEGER PRIMARY KEY AUTOINCREMENT, metadata_item_id INTEGER,
           tag_id INTEGER, "index" INTEGER, text TEXT);
@@ -805,6 +825,54 @@ mod tests {
             )
             .unwrap();
         assert_eq!(star, "Ada Actor");
+    }
+
+    #[test]
+    fn a_retagged_person_keeps_the_photo() {
+        let (_dir, mut db) = db();
+        db.conn
+            .execute_batch(
+                "INSERT INTO metadata_items (id, metadata_type, title) VALUES (1, 1, '示例电影');
+                 INSERT INTO tags (id, tag, tag_type, user_thumb_url) VALUES
+                   (4, 'Ada Director', 4, 'https://img.example/ada.jpg'),
+                   (5, 'Ada Writer', 5, 'https://img.example/writer.jpg'),
+                   (6, '甲导演', 4, NULL);
+                 INSERT INTO taggings (metadata_item_id, tag_id, \"index\") VALUES
+                   (1, 4, 0), (1, 5, 1);",
+            )
+            .unwrap();
+        let credits = crate::localize::Credits {
+            directors: vec![credit("甲导演", "Ada Director")],
+            writers: vec![credit("甲编剧", "Ada Writer")],
+            ..Default::default()
+        };
+        assert_eq!(db.localize_people(1, &credits).unwrap(), 2);
+        // the row that already existed without a photo is filled in
+        let director: Option<String> = db
+            .conn
+            .query_row("SELECT user_thumb_url FROM tags WHERE id=6", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(director.as_deref(), Some("https://img.example/ada.jpg"));
+        // the row that was created carries the photo
+        let writer: Option<String> = db
+            .conn
+            .query_row(
+                "SELECT user_thumb_url FROM tags WHERE tag='甲编剧'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(writer.as_deref(), Some("https://img.example/writer.jpg"));
+        // the English rows keep theirs
+        let english: Option<String> = db
+            .conn
+            .query_row("SELECT user_thumb_url FROM tags WHERE id=4", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(english.as_deref(), Some("https://img.example/ada.jpg"));
     }
 
     #[test]

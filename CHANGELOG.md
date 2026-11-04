@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- A person's photo now moves with the name when the cast is rewritten.
+  The Chinese tag row is created carrying the original row's
+  `user_thumb_url`, and a row written without one is filled in.
 - The localize rewrites now read every id in a `lockedFields` list. A lock
   behind another id was missed, so a scan could rewrite a sort title, a
   tag label or a cast name that was locked.
