@@ -132,4 +132,13 @@ fn scripts_match_the_image_and_the_code() {
         run.contains(&format!("mkdir -p {sock_dir}")),
         "run must create {sock_dir}"
     );
+
+    // editions is opt-in: the run script must keep the gate and the
+    // listener command in step with the cli
+    let editions = read(&rc.join("assistant-editions/run"));
+    assert!(editions.contains(&format!("{BINARY} editions new")));
+    assert!(
+        editions.contains("ASSISTANT_EDITIONS"),
+        "editions run must stay behind ASSISTANT_EDITIONS"
+    );
 }

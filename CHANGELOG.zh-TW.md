@@ -1,5 +1,17 @@
 # 變更日誌
 
+## [Unreleased]
+
+### 新增
+
+- `editions` 透過 Plex HTTP API 寫入電影的 Edition 標題:`all` 補齊還沒有的,
+  `reset` 清除,`new` 監聽新片,`--dry-run` 只預覽。邏輯來自 plex-editions
+  crate;它同時繼續發佈獨立的 PlexEditions 映像,給不換用本專案的人部署。
+  容器內不需任何設定:位址預設本機 Plex,token 讀 `Preferences.xml`;
+  `PLEX_URL`、`PLEX_TOKEN`、`PLEX_CONFIG_DIR` 與 `EDITION_*` 可覆寫。
+- 映像新增 `assistant-editions` 服務,預設關閉。設 `ASSISTANT_EDITIONS=1`
+  啟動 `new` 監聽:先把整個媒體庫補齊,之後每部新入庫的電影寫入 Edition。
+
 ## [0.5.2] — 2026-11-04
 
 ### 變更

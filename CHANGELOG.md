@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `editions` writes movie edition titles over the Plex HTTP API: `all`
+  for movies missing one, `reset` to clear them, `new` to listen, and
+  `--dry-run` to preview. The logic is the plex-editions crate, which
+  keeps shipping its standalone PlexEditions image for servers without
+  the assistant. Inside the container it needs no configuration: the URL
+  defaults to this Plex and the token to its `Preferences.xml`;
+  `PLEX_URL`, `PLEX_TOKEN`, `PLEX_CONFIG_DIR` and the `EDITION_*`
+  variables override.
+- The image gains an `assistant-editions` service, off by default.
+  `ASSISTANT_EDITIONS=1` starts the `new` listener, which catches up
+  over the libraries and then writes an edition for each new movie.
+
 ## [0.5.2] — 2026-11-04
 
 ### Changed

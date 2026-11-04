@@ -1,0 +1,10 @@
+#!/usr/bin/with-contenv bash
+# Longrun: writes edition titles for new movies, as Plex's user. Off by
+# default; ASSISTANT_EDITIONS=1 turns it on. The listener waits for the
+# server on its own, so only the install has to come first.
+if [ "${ASSISTANT_EDITIONS:-0}" != "1" ]; then
+  # disabled: bring the service down for this boot instead of idling
+  s6-svc -O /run/service/assistant-editions
+  exit 0
+fi
+exec s6-setuidgid abc /usr/local/bin/assistant editions new

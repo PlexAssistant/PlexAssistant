@@ -33,6 +33,10 @@ services:
       # - ZH_LOCALIZE=sort,tags,people
       # another TMDB v3 key; unset uses the built-in one
       # - TMDB_API_KEY=
+      # movie edition titles (the PlexEditions feature). The listener is
+      # off unless ASSISTANT_EDITIONS=1; EDITION_* shapes the text
+      # - ASSISTANT_EDITIONS=1
+      # - EDITION_LANG=zh
       # drop those locks; refresh metadata to restore
       # - ZH_LOCALIZE_UNLOCK=1
     volumes:

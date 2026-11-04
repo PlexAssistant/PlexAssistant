@@ -5,6 +5,7 @@
 //! manual invocations use subcommands directly.
 
 mod credits_probe;
+mod editions;
 mod install;
 mod intro;
 mod marker;
@@ -46,6 +47,8 @@ enum Command {
     Marker(marker::Args),
     /// Shows and restores remembered audio and subtitle choices.
     Tracks(tracks::Args),
+    /// Writes movie edition titles on this server.
+    Editions(editions::Args),
 }
 
 /// Maps argv[0] to a subcommand by basename. Exact symlink names are
@@ -95,6 +98,7 @@ pub async fn run() -> i32 {
         Command::CreditsProbe(args) => credits_probe::run(args),
         Command::Marker(args) => marker::run(args),
         Command::Tracks(args) => tracks::run(args),
+        Command::Editions(args) => editions::run(args).await,
     };
     result.unwrap_or_else(|e| {
         eprintln!("Error: {e}");
@@ -161,6 +165,7 @@ mod tests {
             "credits-probe",
             "marker",
             "tracks",
+            "editions",
         ] {
             assert!(has_command(&[name.into()]), "{name}");
         }

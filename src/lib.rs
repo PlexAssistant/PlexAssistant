@@ -16,6 +16,10 @@
 //! - [`runtime`] is the resident daemon both of them ask for links. It keeps
 //!   the link cache and the ledgers: failed targets, markers, remembered
 //!   track choices and cloud usage.
+//! - `editions` (the plex-editions crate, also shipped as the standalone
+//!   PlexEditions image) writes movie edition titles over the Plex HTTP
+//!   API: `editions all` and `reset` on demand, or the `new` listener the
+//!   image runs as a service when `ASSISTANT_EDITIONS=1`.
 //! - [`linkres`] follows a target's redirects to the direct link, and
 //!   [`plexdb`] reads and writes Plex's library database.
 //!
