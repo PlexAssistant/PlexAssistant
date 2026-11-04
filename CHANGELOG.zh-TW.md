@@ -16,6 +16,9 @@
 
 ### 變更
 
+- 掃描器、runtime 和 `assistant intro` 預設使用映像安裝的
+  `/usr/local/bin/ffprobe` 與 `/usr/local/bin/ffmpeg`。
+  `ASSISTANT_FFPROBE` 和 `ASSISTANT_FFMPEG` 仍可覆蓋。`fpcalc` 維持命令名。
 - 掃描探測只向 ffprobe 要會寫進 Plex 的項目:容器與品牌、`extra_data`
   用到的串流欄位,以及章節時間。時長、大小和編碼不變。一集 2160p 的
   JSON 從 57064 位元組降到 33164。

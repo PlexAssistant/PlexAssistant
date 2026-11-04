@@ -25,7 +25,7 @@ pub struct Args {
     #[arg(long, default_value = crate::plexdb::DEFAULT_PATH)]
     library_db: PathBuf,
     /// ffprobe used when a detail page needs analysis
-    #[arg(long, default_value = "ffprobe")]
+    #[arg(long, default_value = super::DEFAULT_FFPROBE)]
     ffprobe: String,
 }
 
@@ -134,6 +134,6 @@ mod tests {
         assert_eq!(args.quota_per_hour, 5);
         assert_eq!(args.cache.to_str(), Some("/config/assistant/cache.db"));
         assert_eq!(args.ua, crate::linkres::DEFAULT_UA);
-        assert_eq!(args.ffprobe, "ffprobe");
+        assert_eq!(args.ffprobe, crate::cli::DEFAULT_FFPROBE);
     }
 }

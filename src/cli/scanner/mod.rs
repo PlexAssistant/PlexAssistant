@@ -72,7 +72,7 @@ async fn analyze_one(db: &mut Db, item: i64, opts: &Options) -> CliResult {
 /// Failures are logged. A season with fewer than two strm episodes, or
 /// one whose episodes are already booked, writes nothing.
 async fn detect_intros(db: &mut Db, seasons: &[i64], opts: &Options) {
-    let ffmpeg = env_or("ASSISTANT_FFMPEG", "ffmpeg");
+    let ffmpeg = env_or("ASSISTANT_FFMPEG", super::DEFAULT_FFMPEG);
     let fpcalc = env_or("ASSISTANT_FPCALC", "fpcalc");
     for &season in seasons {
         match scanner::intro::detect_season_intros(

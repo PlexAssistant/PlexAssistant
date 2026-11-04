@@ -27,7 +27,7 @@ impl Default for ScanFlags {
             section: 0,
             item: 0,
             library_db: plexdb::DEFAULT_PATH.into(),
-            ffprobe: env_or("ASSISTANT_FFPROBE", "ffprobe"),
+            ffprobe: env_or("ASSISTANT_FFPROBE", super::super::DEFAULT_FFPROBE),
             ua: DEFAULT_UA.into(),
             runtime_sock: DEFAULT_SOCK.into(),
         }
