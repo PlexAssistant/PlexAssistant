@@ -12,7 +12,6 @@ use std::time::SystemTime;
 use crate::linkres::{self, Link};
 use crate::runtime::{Client, Resolved};
 use crate::scanner::probe::{ProbeError, ProbeResult, probe};
-use crate::scanner::redact_urls;
 
 use super::Options;
 
@@ -73,8 +72,6 @@ pub(super) async fn probe_and_heal(
                 }
                 Err(e) => {
                     report(target, opts, false).await;
-                    // ffprobe errors can echo the signed URL; redact it
-                    let e = redact_urls(&e.to_string());
                     println!("item {item} part {part}: still dead after refresh: {e}");
                     None
                 }
@@ -84,8 +81,6 @@ pub(super) async fn probe_and_heal(
             // not a dead link, so no refresh — but it still failed, and
             // leaving it unbooked re-probes it on every later scan
             report(target, opts, false).await;
-            // ffprobe errors can echo the signed URL; redact it
-            let e = redact_urls(&e.to_string());
             println!("item {item} part {part}: probe: {e}");
             None
         }
