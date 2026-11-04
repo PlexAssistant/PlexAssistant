@@ -5,6 +5,7 @@
 //! going. A name with no Chinese form comes back as the original name.
 
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -12,6 +13,10 @@ use super::{Credit, CreditTarget, Credits};
 
 const API: &str = "https://api.themoviedb.org/3";
 const LANGUAGE: &str = "zh-CN";
+
+/// A request gives up on its own after this long, so a connection that
+/// never answers cannot hold the scan's item loop.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// One person on a credits list. Fields this pass does not read are ignored.
 #[derive(Deserialize)]
@@ -52,7 +57,13 @@ pub(super) async fn fetch(key: &str, target: CreditTarget) -> Option<Credits> {
         "{API}{path}?api_key={}&language={LANGUAGE}",
         url_encode(key)
     );
-    let bytes = client()
+    fetch_url(client(), &url).await
+}
+
+/// The credits at `url`, or nothing when the request does not come back as
+/// credits. The caller's client decides how long to wait.
+async fn fetch_url(client: &reqwest::Client, url: &str) -> Option<Credits> {
+    let bytes = client
         .get(url)
         .send()
         .await
@@ -67,9 +78,15 @@ pub(super) async fn fetch(key: &str, target: CreditTarget) -> Option<Credits> {
 }
 
 /// One client for the whole scan, so the connection is reused across items.
+/// A request that never comes back gives up on its own.
 fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(reqwest::Client::new)
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            .expect("a client with a timeout always builds")
+    })
 }
 
 /// The key goes in the query string, so anything that would change the
@@ -196,5 +213,22 @@ mod tests {
             guest_stars: vec![],
         });
         assert_eq!(credits.writers[0].name, "Ada Writer");
+    }
+
+    #[tokio::test]
+    async fn a_request_that_never_comes_back_gives_up() {
+        // a socket that is listening but never accepts: the connect lands
+        // in the backlog and the request is written, but no response ever
+        // arrives
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = silent.local_addr().unwrap();
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(200))
+            .build()
+            .unwrap();
+        let url = format!("http://{addr}/3/movie/1/credits?api_key=k&language=zh-CN");
+        let started = std::time::Instant::now();
+        assert!(fetch_url(&client, &url).await.is_none());
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 }

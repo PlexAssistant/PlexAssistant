@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- The credits request now gives up on its own. A connection that never
+  answered held the scan's item loop until the process was stopped.
 - A person's photo now moves with the name when the cast is rewritten.
   The Chinese tag row is created carrying the original row's
   `user_thumb_url`, and a row written without one is filled in.
