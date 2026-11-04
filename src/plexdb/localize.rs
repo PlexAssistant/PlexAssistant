@@ -292,6 +292,9 @@ fn episode_target(
     let (Some(show_id), Some(season_index)) = (season.parent_id, season.index) else {
         return Ok(None);
     };
+    // Season 0 is specials. Their numbering is the library's own and does
+    // not line up with the season 0 TMDB serves, so those episodes keep
+    // their stored names.
     if season_index <= 0 {
         return Ok(None);
     }
